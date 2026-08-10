@@ -89,10 +89,15 @@ func AssertEmptyOrNew(directory string) error {
 // package.json and koishi.yml.
 func AssertIsKoishiApp(directory string) error {
 	for _, name := range []string{"package.json", "koishi.yml"} {
-		if _, err := os.Stat(filepath.Join(directory, name)); os.IsNotExist(err) {
+		info, err := os.Stat(filepath.Join(directory, name))
+		if os.IsNotExist(err) {
 			return fmt.Errorf("not a Koishi App: %s\n  Expected %s to exist.", directory, name)
-		} else if err != nil {
+		}
+		if err != nil {
 			return fmt.Errorf("cannot inspect %s: %v", directory, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("not a Koishi App: %s\n  Expected %s to be a file.", directory, name)
 		}
 	}
 	return nil

@@ -16,9 +16,9 @@ func newInitCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [directory]",
-		Short: "Initialize a new YesImBot app",
-		Long: `Initialize a new YesImBot app in the specified directory,
-or ./yesimbot-app in the current directory if not specified.`,
+		Short: "Initialize or install YesImBot in a Koishi App",
+		Long: `Initialize a new YesImBot app in the specified directory, or install YesImBot into an existing Koishi App.
+Uses ./yesimbot-app in the current directory if no directory is specified.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var directory string

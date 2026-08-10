@@ -5,26 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
-
-func TestReadYarnVersion(t *testing.T) {
-	dir := t.TempDir()
-
-	// Missing package.json -> default.
-	if v := readYarnVersion(dir); v != "4.12.0" {
-		t.Errorf("missing package.json: got %q", v)
-	}
-
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"packageManager": "yarn@4.3.1"}`), 0o644)
-	if v := readYarnVersion(dir); v != "4.3.1" {
-		t.Errorf("got %q, want 4.3.1", v)
-	}
-
-	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"packageManager": "pnpm@9"}`), 0o644)
-	if v := readYarnVersion(dir); v != "4.12.0" {
-		t.Errorf("non-yarn manager: got %q, want default", v)
-	}
-}
 
 func TestFindYarnBinary(t *testing.T) {
 	source := t.TempDir()
@@ -61,5 +43,71 @@ func TestProbeFastestLocal(t *testing.T) {
 	got := probeFastest([]string{"http://127.0.0.1:1/x", live}, "fallback")
 	if got != live {
 		t.Errorf("got %q, want live listener %q", got, live)
+	}
+}
+
+func TestBackupExistingAppConfigPreservesOriginalBytes(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	packageContent := []byte("{\n  \"name\": \"my-bot\"\n}\n")
+	koishiContent := []byte("plugins:\n  custom: {}\n")
+	if err := os.WriteFile(paths.PackageJson, packageContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.KoishiYml, koishiContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	timestamp := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
+	if err := backupExistingAppConfig(paths, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string][]byte{
+		paths.PackageJson + ".yesimbot.20260810T120000Z.bak": packageContent,
+		paths.KoishiYml + ".yesimbot.20260810T120000Z.bak":   koishiContent,
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("missing backup %s: %v", path, err)
+			continue
+		}
+		if string(got) != string(want) {
+			t.Errorf("backup %s = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestCreateAppStructureExistingKeepsKoishiFiles(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	packageContent := []byte("{\"name\":\"my-bot\"}\n")
+	koishiContent := []byte("plugins:\n  custom: {}\n")
+	if err := os.WriteFile(paths.PackageJson, packageContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.KoishiYml, koishiContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := createAppStructure(&initContext{paths: paths, existing: true}); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string][]byte{
+		paths.PackageJson: packageContent,
+		paths.KoishiYml:   koishiContent,
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("missing existing file %s: %v", path, err)
+			continue
+		}
+		if string(got) != string(want) {
+			t.Errorf("existing file %s changed to %q", path, got)
+		}
+	}
+	for _, dir := range []string{paths.YesimbotDir, paths.SourceDir, paths.LogsDir} {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Errorf("launcher directory %s missing: %v", dir, err)
+		}
 	}
 }

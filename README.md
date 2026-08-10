@@ -5,8 +5,8 @@
 ## 构建
 
 ```bash
-make build          # 产物 ./dist/yesimbot-cli（静态、去符号，约 4MB）
-make dist           # 额外用 UPX 压缩（约 1.6MB，需安装 upx-ucl）
+make build
+make dist
 # 或
 go build -o yesimbot-cli .
 ```

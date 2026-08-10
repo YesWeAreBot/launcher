@@ -66,3 +66,17 @@ func TestAssertIsKoishiApp(t *testing.T) {
 		t.Errorf("complete app rejected: %v", err)
 	}
 }
+
+func TestIsKoishiAppRequiresManifestFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "package.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "koishi.yml"), []byte("plugins: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if IsKoishiApp(dir) {
+		t.Error("directory-shaped package.json reported as a Koishi App")
+	}
+}

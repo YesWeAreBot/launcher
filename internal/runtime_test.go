@@ -98,12 +98,7 @@ func TestWaitForExit(t *testing.T) {
 
 func TestConsoleURL(t *testing.T) {
 	paths := Derive(t.TempDir())
-	plugins := []PluginInfo{{PackageName: "koishi-plugin-yesimbot", ConfigKey: "yesimbot", Group: "core", Enabled: true}}
-	content, err := GenerateKoishiYml(plugins, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.WriteFile(paths.KoishiYml, []byte(content), 0o644)
+	os.WriteFile(paths.KoishiYml, []byte("plugins:\n  group:server:\n    server:\n      port: 5140\n"), 0o644)
 
 	if url := ConsoleURL(paths); url != "http://127.0.0.1:5140" {
 		t.Errorf("ConsoleURL = %q, want http://127.0.0.1:5140", url)

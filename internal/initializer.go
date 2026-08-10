@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -31,9 +30,9 @@ type initContext struct {
 	options     InitOptions
 	runner      CommandRunner
 	paths       AppPaths
-	yarnVersion string
 	registryURL string
 	gitURL      string
+	existing    bool
 }
 
 func logStep(step int, message string) {
@@ -56,8 +55,20 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 	if err != nil {
 		return InitResult{}, err
 	}
-	if err := AssertEmptyOrNew(appDir); err != nil {
-		return InitResult{}, err
+	existing := IsKoishiApp(appDir)
+	if !existing {
+		if err := AssertEmptyOrNew(appDir); err != nil {
+			return InitResult{}, err
+		}
+	} else {
+		fmt.Printf("WARNING: %s is an existing Koishi App. YesImBot will add dependencies and plugins without replacing existing settings.\n", appDir)
+		proceed, err := AskUser("Continue installing YesImBot? [y/N] ")
+		if err != nil {
+			return InitResult{}, err
+		}
+		if !proceed {
+			return InitResult{}, fmt.Errorf("installation cancelled")
+		}
 	}
 	paths := Derive(appDir)
 
@@ -69,6 +80,7 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 		paths:       paths,
 		registryURL: probeYarnRegistry(),
 		gitURL:      probeGitURL(),
+		existing:    existing,
 	}
 	if options.Local != "" {
 		localPath, err := filepath.Abs(options.Local)
@@ -79,13 +91,11 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			return InitResult{}, fmt.Errorf("local YesImBot path does not exist: %s", localPath)
 		}
-		ctx.yarnVersion = readYarnVersion(localPath)
-	} else {
-		ctx.yarnVersion = "4.12.0" // confirmed after clone
 	}
 
-	// 4. Create the Koishi App skeleton (incl. copying the Yarn binary).
-	logStep(4, "Creating Koishi App structure...")
+	// 4. Download the complete Koishi boilerplate for new Apps, or create only
+	// launcher-owned directories for existing Apps.
+	logStep(4, "Preparing Koishi App structure...")
 	if err := createAppStructure(ctx); err != nil {
 		return InitResult{}, err
 	}
@@ -94,12 +104,6 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 	logStep(5, "Setting up YesImBot source...")
 	if err := setupSource(ctx); err != nil {
 		return InitResult{}, err
-	}
-	if options.Local == "" {
-		ctx.yarnVersion = readYarnVersion(paths.SourceDir)
-		if err := copyYarnBinary(ctx, paths.SourceDir); err != nil {
-			return InitResult{}, err
-		}
 	}
 
 	// 6. Read the YesImBot workspace package manifest.
@@ -110,19 +114,28 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 	}
 	fmt.Printf("  Found %d plugin(s)\n", len(plugins))
 
-	// 7. Write the App package.json (workspaces + workspace:^ deps).
+	// 7. Back up existing configuration, then add YesImBot dependencies.
 	logStep(7, "Writing package.json...")
+	if ctx.existing {
+		if err := backupExistingAppConfig(paths, time.Now()); err != nil {
+			return InitResult{}, err
+		}
+	}
 	if err := writeAppPackageJson(ctx, plugins); err != nil {
 		return InitResult{}, err
 	}
 
-	// 8. Write koishi.yml with the plugin list.
+	// 8. Add missing YesImBot plugins while retaining existing configuration.
 	logStep(8, "Writing koishi.yml...")
-	koishiContent, err := GenerateKoishiYml(plugins, 0)
+	koishiContent, err := os.ReadFile(paths.KoishiYml)
+	if err != nil {
+		return InitResult{}, fmt.Errorf("failed to read koishi.yml: %v", err)
+	}
+	mergedKoishiContent, err := MergeExistingKoishiYml(koishiContent, plugins)
 	if err != nil {
 		return InitResult{}, err
 	}
-	if err := os.WriteFile(paths.KoishiYml, []byte(koishiContent), 0o644); err != nil {
+	if err := os.WriteFile(paths.KoishiYml, mergedKoishiContent, 0o644); err != nil {
 		return InitResult{}, fmt.Errorf("failed to write koishi.yml: %v", err)
 	}
 
@@ -247,82 +260,19 @@ func dialProbe(rawURL string) bool {
 	return true
 }
 
-// readYarnVersion reads the `packageManager` field of a YesImBot
-// package.json (e.g. "yarn@4.12.0").
-func readYarnVersion(sourceRoot string) string {
-	content, err := os.ReadFile(filepath.Join(sourceRoot, "package.json"))
-	if err != nil {
-		return "4.12.0"
-	}
-	var pkg struct {
-		PackageManager string `json:"packageManager"`
-	}
-	if err := json.Unmarshal(content, &pkg); err != nil {
-		return "4.12.0"
-	}
-	match := strings.TrimPrefix(pkg.PackageManager, "yarn@")
-	if match != pkg.PackageManager {
-		return match
-	}
-	return "4.12.0"
-}
-
-// createAppStructure builds directories, copies the Yarn binary
-// (local mode: from the local repo), and writes .yarnrc.yml + tsconfig.json.
+// createAppStructure downloads a complete Koishi App for a new target. An
+// existing App receives only launcher-owned directories.
 func createAppStructure(ctx *initContext) error {
 	paths := ctx.paths
-	for _, dir := range []string{
-		paths.AppDir,
-		paths.YesimbotDir,
-		paths.SourceDir,
-		paths.LogsDir,
-		filepath.Join(paths.AppDir, "data"),
-		filepath.Join(paths.AppDir, ".yarn", "releases"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %v", dir, err)
-		}
-	}
-
-	if ctx.options.Local != "" {
-		if err := copyYarnBinary(ctx, ctx.options.Local); err != nil {
+	if !ctx.existing {
+		if err := downloadBoilerplate(paths.AppDir); err != nil {
 			return err
 		}
 	}
-
-	yarnFilename := fmt.Sprintf("yarn-%s.cjs", ctx.yarnVersion)
-	yarnrc := GenerateYarnrc(".yarn/releases/"+yarnFilename, ctx.registryURL)
-	if err := os.WriteFile(filepath.Join(paths.AppDir, ".yarnrc.yml"), []byte(yarnrc), 0o644); err != nil {
-		return fmt.Errorf("failed to write .yarnrc.yml: %v", err)
-	}
-
-	tsconfig := `{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  }
-}`
-	if err := os.WriteFile(filepath.Join(paths.AppDir, "tsconfig.json"), []byte(tsconfig), 0o644); err != nil {
-		return fmt.Errorf("failed to write tsconfig.json: %v", err)
-	}
-	return nil
-}
-
-// copyYarnBinary copies .yarn/releases/yarn-<version>.cjs from a
-// YesImBot checkout into the App.
-func copyYarnBinary(ctx *initContext, sourceRoot string) error {
-	yarnFilename := fmt.Sprintf("yarn-%s.cjs", ctx.yarnVersion)
-	src := filepath.Join(sourceRoot, ".yarn", "releases", yarnFilename)
-	dst := filepath.Join(ctx.paths.AppDir, ".yarn", "releases", yarnFilename)
-
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		return fmt.Errorf("Yarn binary not found in YesImBot source: %s\n  Expected %s from the packageManager field.", src, yarnFilename)
-	}
-	if err := copyFile(src, dst); err != nil {
-		return fmt.Errorf("failed to copy yarn binary: %v", err)
+	for _, dir := range []string{paths.YesimbotDir, paths.SourceDir, paths.LogsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", dir, err)
+		}
 	}
 	return nil
 }
@@ -354,25 +304,44 @@ func setupSource(ctx *initContext) error {
 }
 
 func writeAppPackageJson(ctx *initContext, plugins []PluginInfo) error {
-	pkg, err := GenerateAppPackageJson(struct {
-		AppDir      string
-		SourceDir   string
-		Plugins     []PluginInfo
-		YarnVersion string
-	}{
-		AppDir:      ctx.paths.AppDir,
-		SourceDir:   ctx.paths.SourceDir,
-		Plugins:     plugins,
-		YarnVersion: ctx.yarnVersion,
-	})
+	content, err := os.ReadFile(ctx.paths.PackageJson)
+	if err != nil {
+		return fmt.Errorf("failed to read package.json: %v", err)
+	}
+	data, conflicts, err := MergeExistingAppPackageJSON(content, ctx.paths.AppDir, ctx.paths.SourceDir, plugins)
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(pkg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal package.json: %v", err)
+	for _, packageName := range conflicts {
+		fmt.Printf("  Keeping existing dependency version: %s\n", packageName)
 	}
 	return os.WriteFile(ctx.paths.PackageJson, data, 0o644)
+}
+
+func backupExistingAppConfig(paths AppPaths, timestamp time.Time) error {
+	suffix := ".yesimbot." + timestamp.UTC().Format("20060102T150405Z") + ".bak"
+	for _, source := range []string{paths.KoishiYml, paths.PackageJson} {
+		if err := backupFile(source, source+suffix); err != nil {
+			return fmt.Errorf("failed to back up %s: %v", filepath.Base(source), err)
+		}
+	}
+	return nil
+}
+
+func backupFile(source, destination string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	defer output.Close()
+	_, err = io.Copy(output, input)
+	return err
 }
 
 // installSourceDeps runs yarn install in the source workspace. Remote
@@ -518,21 +487,4 @@ func isTerminal() bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
-}
-
-func copyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = destFile.ReadFrom(sourceFile)
-	return err
 }
