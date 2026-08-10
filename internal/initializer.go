@@ -1,0 +1,538 @@
+package internal
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const stepCount = 12
+
+type InitOptions struct {
+	Directory string
+	Local     string
+	Build     bool
+}
+
+type InitResult struct {
+	AppDir     string
+	SourceHead string
+	Plugins    []PluginInfo
+}
+
+type initContext struct {
+	options     InitOptions
+	runner      CommandRunner
+	paths       AppPaths
+	yarnVersion string
+	registryURL string
+	gitURL      string
+}
+
+func logStep(step int, message string) {
+	fmt.Printf("[%d/%d] %s\n", step, stepCount, message)
+}
+
+// Initialize runs the 12-step init flow. On failure the partial App is
+// left in place (no user content is deleted) and no success state is
+// written.
+func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
+	// 1. Preflight the environment for this command.
+	logStep(1, "Checking environment...")
+	if err := preflight(runner, options); err != nil {
+		return InitResult{}, err
+	}
+
+	// 2. Resolve and validate the target directory.
+	logStep(2, "Resolving target directory...")
+	appDir, err := ResolveInitTarget(options.Directory)
+	if err != nil {
+		return InitResult{}, err
+	}
+	if err := AssertEmptyOrNew(appDir); err != nil {
+		return InitResult{}, err
+	}
+	paths := Derive(appDir)
+
+	// 3. Probe Git/Yarn candidate sources and prepare local config.
+	logStep(3, "Probing package registries...")
+	ctx := &initContext{
+		options:     options,
+		runner:      runner,
+		paths:       paths,
+		registryURL: probeYarnRegistry(),
+		gitURL:      probeGitURL(),
+	}
+	if options.Local != "" {
+		localPath, err := filepath.Abs(options.Local)
+		if err != nil {
+			return InitResult{}, fmt.Errorf("invalid --local path: %v", err)
+		}
+		options.Local = localPath
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			return InitResult{}, fmt.Errorf("local YesImBot path does not exist: %s", localPath)
+		}
+		ctx.yarnVersion = readYarnVersion(localPath)
+	} else {
+		ctx.yarnVersion = "4.12.0" // confirmed after clone
+	}
+
+	// 4. Create the Koishi App skeleton (incl. copying the Yarn binary).
+	logStep(4, "Creating Koishi App structure...")
+	if err := createAppStructure(ctx); err != nil {
+		return InitResult{}, err
+	}
+
+	// 5. Put the YesImBot source into .yesimbot/source.
+	logStep(5, "Setting up YesImBot source...")
+	if err := setupSource(ctx); err != nil {
+		return InitResult{}, err
+	}
+	if options.Local == "" {
+		ctx.yarnVersion = readYarnVersion(paths.SourceDir)
+		if err := copyYarnBinary(ctx, paths.SourceDir); err != nil {
+			return InitResult{}, err
+		}
+	}
+
+	// 6. Read the YesImBot workspace package manifest.
+	logStep(6, "Discovering plugins...")
+	plugins, err := DiscoverPlugins(paths.SourceDir)
+	if err != nil {
+		return InitResult{}, err
+	}
+	fmt.Printf("  Found %d plugin(s)\n", len(plugins))
+
+	// 7. Write the App package.json (workspaces + workspace:^ deps).
+	logStep(7, "Writing package.json...")
+	if err := writeAppPackageJson(ctx, plugins); err != nil {
+		return InitResult{}, err
+	}
+
+	// 8. Write koishi.yml with the plugin list.
+	logStep(8, "Writing koishi.yml...")
+	koishiContent, err := GenerateKoishiYml(plugins, 0)
+	if err != nil {
+		return InitResult{}, err
+	}
+	if err := os.WriteFile(paths.KoishiYml, []byte(koishiContent), 0o644); err != nil {
+		return InitResult{}, fmt.Errorf("failed to write koishi.yml: %v", err)
+	}
+
+	// 9. Install YesImBot workspace dependencies.
+	logStep(9, "Installing YesImBot dependencies...")
+	if err := installSourceDeps(ctx); err != nil {
+		return InitResult{}, err
+	}
+
+	// 10. Build the YesImBot workspace.
+	logStep(10, "Building YesImBot...")
+	if err := buildSource(ctx); err != nil {
+		return InitResult{}, err
+	}
+
+	// 11. Install/resolve the Koishi App dependencies.
+	logStep(11, "Installing App dependencies...")
+	if err := installAppDeps(ctx); err != nil {
+		return InitResult{}, err
+	}
+
+	// 12. Write the initialized state.
+	logStep(12, "Writing launcher state...")
+	sourceHead, err := getSourceHead(ctx)
+	if err != nil {
+		sourceHead = "unknown"
+	}
+	if err := MarkInitialized(paths, sourceHead); err != nil {
+		return InitResult{}, err
+	}
+
+	fmt.Printf("\n✓ Initialization complete: %s\n", appDir)
+	return InitResult{AppDir: appDir, SourceHead: sourceHead, Plugins: plugins}, nil
+}
+
+// preflight checks only what init needs: Node.js >= 18, and Git
+// (hard requirement for remote mode; --local only reads HEAD, so a
+// missing Git is a warning there).
+func preflight(runner CommandRunner, options InitOptions) error {
+	_, major, err := NodeVersion(runner)
+	if err != nil {
+		return err
+	}
+	if major < 18 {
+		return fmt.Errorf("Node.js 18+ is required, found Node.js %d\n  Debian/Ubuntu: sudo apt install nodejs npm\n  macOS:         brew install node\n  Windows:       winget install OpenJS.NodeJS.LTS", major)
+	}
+
+	result, err := runner.Run("git", []string{"--version"}, RunOptions{})
+	if err != nil || result.ExitCode != 0 {
+		if options.Local != "" {
+			fmt.Println("  ⚠ Git is not available (continuing — only needed for source HEAD detection)")
+			return nil
+		}
+		return fmt.Errorf("Git is not available\n  Debian/Ubuntu: sudo apt install git\n  macOS:         brew install git\n  Windows:       winget install Git.Git")
+	}
+	return nil
+}
+
+// probeYarnRegistry picks the fastest reachable npm registry; all
+// candidates failing falls back to the official one and lets the actual
+// yarn command report errors.
+func probeYarnRegistry() string {
+	return probeFastest([]string{
+		"https://registry.npmjs.org",
+		"https://registry.npmmirror.com",
+	}, "https://registry.npmjs.org")
+}
+
+// probeGitURL picks the fastest reachable YesImBot repository URL.
+// GITHUB_MIRROR, when set, contributes a candidate before the official
+// GitHub address. No global git config is ever written.
+func probeGitURL() string {
+	candidates := []string{"https://github.com/YesWeAreBot/YesImBot.git"}
+	if mirror := os.Getenv("GITHUB_MIRROR"); mirror != "" {
+		candidates = append([]string{strings.TrimSuffix(mirror, "/") + "/YesWeAreBot/YesImBot.git"}, candidates...)
+	}
+	return probeFastest(candidates, candidates[len(candidates)-1])
+}
+
+// probeFastest runs concurrent lightweight TCP probes and returns the
+// first candidate accepting a connection within 3 seconds. A TCP
+// handshake is a sufficient reachability probe for mirror selection:
+// any candidate that accepts connections but then fails HTTP is
+// reported by the actual git/yarn command, per the design's fallback
+// rule. Dialing instead of net/http keeps the binary several MB
+// smaller (no crypto/tls).
+func probeFastest(candidates []string, fallback string) string {
+	results := make(chan string, len(candidates))
+	for _, c := range candidates {
+		go func(c string) {
+			if dialProbe(c) {
+				results <- c
+			}
+		}(c)
+	}
+	select {
+	case c := <-results:
+		return c
+	case <-time.After(3 * time.Second):
+		return fallback
+	}
+}
+
+func dialProbe(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Hostname(), port), 2*time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// readYarnVersion reads the `packageManager` field of a YesImBot
+// package.json (e.g. "yarn@4.12.0").
+func readYarnVersion(sourceRoot string) string {
+	content, err := os.ReadFile(filepath.Join(sourceRoot, "package.json"))
+	if err != nil {
+		return "4.12.0"
+	}
+	var pkg struct {
+		PackageManager string `json:"packageManager"`
+	}
+	if err := json.Unmarshal(content, &pkg); err != nil {
+		return "4.12.0"
+	}
+	match := strings.TrimPrefix(pkg.PackageManager, "yarn@")
+	if match != pkg.PackageManager {
+		return match
+	}
+	return "4.12.0"
+}
+
+// createAppStructure builds directories, copies the Yarn binary
+// (local mode: from the local repo), and writes .yarnrc.yml + tsconfig.json.
+func createAppStructure(ctx *initContext) error {
+	paths := ctx.paths
+	for _, dir := range []string{
+		paths.AppDir,
+		paths.YesimbotDir,
+		paths.SourceDir,
+		paths.LogsDir,
+		filepath.Join(paths.AppDir, "data"),
+		filepath.Join(paths.AppDir, ".yarn", "releases"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %v", dir, err)
+		}
+	}
+
+	if ctx.options.Local != "" {
+		if err := copyYarnBinary(ctx, ctx.options.Local); err != nil {
+			return err
+		}
+	}
+
+	yarnFilename := fmt.Sprintf("yarn-%s.cjs", ctx.yarnVersion)
+	yarnrc := GenerateYarnrc(".yarn/releases/"+yarnFilename, ctx.registryURL)
+	if err := os.WriteFile(filepath.Join(paths.AppDir, ".yarnrc.yml"), []byte(yarnrc), 0o644); err != nil {
+		return fmt.Errorf("failed to write .yarnrc.yml: %v", err)
+	}
+
+	tsconfig := `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}`
+	if err := os.WriteFile(filepath.Join(paths.AppDir, "tsconfig.json"), []byte(tsconfig), 0o644); err != nil {
+		return fmt.Errorf("failed to write tsconfig.json: %v", err)
+	}
+	return nil
+}
+
+// copyYarnBinary copies .yarn/releases/yarn-<version>.cjs from a
+// YesImBot checkout into the App.
+func copyYarnBinary(ctx *initContext, sourceRoot string) error {
+	yarnFilename := fmt.Sprintf("yarn-%s.cjs", ctx.yarnVersion)
+	src := filepath.Join(sourceRoot, ".yarn", "releases", yarnFilename)
+	dst := filepath.Join(ctx.paths.AppDir, ".yarn", "releases", yarnFilename)
+
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		return fmt.Errorf("Yarn binary not found in YesImBot source: %s\n  Expected %s from the packageManager field.", src, yarnFilename)
+	}
+	if err := copyFile(src, dst); err != nil {
+		return fmt.Errorf("failed to copy yarn binary: %v", err)
+	}
+	return nil
+}
+
+// setupSource links --local into .yesimbot/source without touching the
+// external repo, or clones the chosen remote at origin/dev.
+func setupSource(ctx *initContext) error {
+	paths := ctx.paths
+	// Replace the empty placeholder directory (created in step 4).
+	if err := os.Remove(paths.SourceDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to prepare source directory: %v", err)
+	}
+
+	if ctx.options.Local != "" {
+		if err := os.Symlink(ctx.options.Local, paths.SourceDir); err != nil {
+			return fmt.Errorf("failed to create symlink: %v", err)
+		}
+		fmt.Printf("  Linked: %s → %s\n", paths.SourceDir, ctx.options.Local)
+		return nil
+	}
+
+	repo := ctx.gitURL
+	if _, err := Checked(ctx.runner, "git", []string{
+		"clone", "--branch", "dev", "--single-branch", "--depth", "1", repo, paths.SourceDir,
+	}, RunOptions{Cwd: paths.AppDir}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeAppPackageJson(ctx *initContext, plugins []PluginInfo) error {
+	pkg, err := GenerateAppPackageJson(struct {
+		AppDir      string
+		SourceDir   string
+		Plugins     []PluginInfo
+		YarnVersion string
+	}{
+		AppDir:      ctx.paths.AppDir,
+		SourceDir:   ctx.paths.SourceDir,
+		Plugins:     plugins,
+		YarnVersion: ctx.yarnVersion,
+	})
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal package.json: %v", err)
+	}
+	return os.WriteFile(ctx.paths.PackageJson, data, 0o644)
+}
+
+// installSourceDeps runs yarn install in the source workspace. Remote
+// mode always runs it; --local skips by default, prompting when
+// node_modules is missing unless --build forces the run.
+func installSourceDeps(ctx *initContext) error {
+	realSourceDir, err := filepath.EvalSymlinks(ctx.paths.SourceDir)
+	if err != nil {
+		return fmt.Errorf("cannot resolve source directory: %v", err)
+	}
+
+	if ctx.options.Local != "" {
+		installed := dirExists(filepath.Join(realSourceDir, "node_modules"))
+		if installed && !ctx.options.Build {
+			fmt.Println("  Source dependencies already installed (skipping)")
+			return nil
+		}
+		if !installed && !ctx.options.Build {
+			proceed, err := askUser("  Source node_modules not found. Install dependencies now? [Y/n] ")
+			if err != nil {
+				return err
+			}
+			if !proceed {
+				fmt.Println("  Skipping source dependency install")
+				return nil
+			}
+		}
+	}
+
+	yarnPath := findYarnBinary(realSourceDir, ctx.paths.YarnBin)
+	_, err = Checked(ctx.runner, "node", []string{yarnPath, "install"}, RunOptions{
+		Cwd: realSourceDir,
+		Env: map[string]string{
+			"YARN_NPM_REGISTRY_SERVER":       ctx.registryURL,
+			"YARN_ENABLE_IMMUTABLE_INSTALLS": "false",
+		},
+		Stdio: "inherit",
+	})
+	return err
+}
+
+// buildSource runs yarn build in the source workspace under the same
+// skip/prompt/force rules as installSourceDeps, checking core/dist.
+func buildSource(ctx *initContext) error {
+	realSourceDir, err := filepath.EvalSymlinks(ctx.paths.SourceDir)
+	if err != nil {
+		return fmt.Errorf("cannot resolve source directory: %v", err)
+	}
+
+	if ctx.options.Local != "" {
+		built := dirExists(filepath.Join(realSourceDir, "core", "dist")) ||
+			dirExists(filepath.Join(realSourceDir, "core", "lib"))
+		if built && !ctx.options.Build {
+			fmt.Println("  Source already built (skipping)")
+			return nil
+		}
+		if !built && !ctx.options.Build {
+			proceed, err := askUser("  Source not built (core/dist missing). Build now? [Y/n] ")
+			if err != nil {
+				return err
+			}
+			if !proceed {
+				fmt.Println("  Skipping source build")
+				return nil
+			}
+		}
+	}
+
+	yarnPath := findYarnBinary(realSourceDir, ctx.paths.YarnBin)
+	_, err = Checked(ctx.runner, "node", []string{yarnPath, "build"}, RunOptions{
+		Cwd:   realSourceDir,
+		Env:   map[string]string{"YARN_NPM_REGISTRY_SERVER": ctx.registryURL},
+		Stdio: "inherit",
+	})
+	return err
+}
+
+func installAppDeps(ctx *initContext) error {
+	_, err := Checked(ctx.runner, "node", []string{ctx.paths.YarnBin, "install"}, RunOptions{
+		Cwd: ctx.paths.AppDir,
+		Env: map[string]string{
+			"YARN_NPM_REGISTRY_SERVER":       ctx.registryURL,
+			"YARN_ENABLE_IMMUTABLE_INSTALLS": "false",
+		},
+		Stdio: "inherit",
+	})
+	return err
+}
+
+func getSourceHead(ctx *initContext) (string, error) {
+	realSourceDir, err := filepath.EvalSymlinks(ctx.paths.SourceDir)
+	if err != nil {
+		return "", err
+	}
+	result, err := ctx.runner.Run("git", []string{"rev-parse", "HEAD"}, RunOptions{Cwd: realSourceDir})
+	if err != nil || result.ExitCode != 0 {
+		return "", fmt.Errorf("cannot read source HEAD")
+	}
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+// findYarnBinary prefers the source's own yarn release, falling back to
+// the App's copy.
+func findYarnBinary(sourceRoot, appYarnBin string) string {
+	entries, err := os.ReadDir(filepath.Join(sourceRoot, ".yarn", "releases"))
+	if err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, "yarn-") && strings.HasSuffix(name, ".cjs") {
+				return filepath.Join(sourceRoot, ".yarn", "releases", name)
+			}
+		}
+	}
+	return appYarnBin
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// askUser prompts yes/no; non-interactive stdin defaults to yes.
+func askUser(question string) (bool, error) {
+	if !isTerminal() {
+		return true, nil
+	}
+	fmt.Print(question)
+	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	return parseYesNo(answer), nil
+}
+
+func parseYesNo(answer string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(answer))
+	return trimmed == "" || trimmed == "y" || trimmed == "yes"
+}
+
+func isTerminal() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = destFile.ReadFrom(sourceFile)
+	return err
+}

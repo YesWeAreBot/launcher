@@ -1,0 +1,94 @@
+name: Nightly
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go vet ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, asset: yesimbot-cli-linux-amd64 }
+          - { goos: linux, goarch: arm64, asset: yesimbot-cli-linux-arm64 }
+          - { goos: darwin, goarch: amd64, asset: yesimbot-cli-darwin-amd64 }
+          - { goos: darwin, goarch: arm64, asset: yesimbot-cli-darwin-arm64 }
+          - { goos: windows, goarch: amd64, asset: yesimbot-cli-windows-amd64.exe }
+          - { goos: windows, goarch: arm64, asset: yesimbot-cli-windows-arm64.exe }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build ${{ matrix.asset }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X launcher/cmd.version=nightly-${GITHUB_SHA}" -o "dist/${{ matrix.asset }}" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: nightly-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: yesimbot-cli-*
+          path: dist
+          merge-multiple: true
+      - name: Replace nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          main_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')"
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo "::notice::Skipping stale nightly release for ${GITHUB_SHA}; main is now ${main_sha}."
+            exit 0
+          fi
+          if gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete nightly --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/nightly" >/dev/null 2>&1; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly"
+          fi
+          gh release create nightly \
+            dist/yesimbot-cli-linux-amd64 \
+            dist/yesimbot-cli-linux-arm64 \
+            dist/yesimbot-cli-darwin-amd64 \
+            dist/yesimbot-cli-darwin-arm64 \
+            dist/yesimbot-cli-windows-amd64.exe \
+            dist/yesimbot-cli-windows-arm64.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Nightly" \
+            --notes "Rolling nightly build for ${GITHUB_SHA}" \
+            --prerelease
