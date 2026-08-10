@@ -44,7 +44,10 @@ yesimbot-cli init [directory] [--local <path>] [--build]
 yesimbot-cli start [--daemon] [--app <directory>]
 yesimbot-cli stop [--app <directory>]
 yesimbot-cli status [--app <directory>]
+yesimbot-cli uninstall [directory] [--app <directory>] [--keep-app] [--yes]
 ```
+
+`uninstall` 默认停止实例并把整个 Koishi App 移动到同级备份目录，保证可逆；需要保留 Koishi App 时使用 `--keep-app`。
 
 ## 目录
 

@@ -163,7 +163,7 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 	if err != nil {
 		sourceHead = "unknown"
 	}
-	if err := MarkInitialized(paths, sourceHead); err != nil {
+	if err := MarkInitialized(paths, sourceHead, plugins...); err != nil {
 		return InitResult{}, err
 	}
 

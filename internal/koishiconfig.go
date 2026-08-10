@@ -91,6 +91,11 @@ func isKoishiPlugin(name string) bool {
 		strings.HasPrefix(name, "@yesimbot/koishi-plugin-provider-")
 }
 
+// IsManagedPluginName reports whether a dependency belongs to the YesImBot workspace.
+func IsManagedPluginName(name string) bool {
+	return isKoishiPlugin(name)
+}
+
 // PackageNameToConfigKey maps a package name to its Koishi config key:
 //
 //	koishi-plugin-yesimbot                  -> yesimbot
@@ -229,6 +234,98 @@ func appendMissingStrings(entries []any, want []string) []any {
 	return entries
 }
 
+// ManagedWorkspacePatterns returns the workspace globs added by launcher init.
+func ManagedWorkspacePatterns(appDir, sourceDir string) []string {
+	return []string{
+		toRelativePosix(appDir, sourceDir),
+		toRelativePosix(appDir, filepath.Join(sourceDir, "core")),
+		toRelativePosix(appDir, filepath.Join(sourceDir, "packages", "*")),
+		toRelativePosix(appDir, filepath.Join(sourceDir, "providers", "*")),
+		toRelativePosix(appDir, filepath.Join(sourceDir, "plugins", "*")),
+	}
+}
+
+// RemoveManagedAppPackageJSON removes launcher-managed dependencies and workspace entries.
+func RemoveManagedAppPackageJSON(content []byte, appDir, sourceDir string, plugins []PluginInfo) ([]byte, []string, error) {
+	var pkg map[string]any
+	if err := json.Unmarshal(content, &pkg); err != nil {
+		return nil, nil, fmt.Errorf("invalid package.json: %v", err)
+	}
+
+	var removed []string
+	if deps, ok := pkg["dependencies"].(map[string]any); ok {
+		names := make(map[string]bool, len(plugins))
+		for _, plugin := range plugins {
+			names[plugin.PackageName] = true
+		}
+		for name := range deps {
+			if len(names) > 0 {
+				if !names[name] {
+					continue
+				}
+			} else if !IsManagedPluginName(name) {
+				continue
+			}
+			delete(deps, name)
+			removed = append(removed, name)
+		}
+	}
+
+	workspaceRemoved, err := removeManagedWorkspaces(pkg, ManagedWorkspacePatterns(appDir, sourceDir))
+	if err != nil {
+		return nil, nil, err
+	}
+	removed = append(removed, workspaceRemoved...)
+
+	data, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal package.json: %v", err)
+	}
+	return append(data, '\n'), removed, nil
+}
+
+func removeManagedWorkspaces(pkg map[string]any, patterns []string) ([]string, error) {
+	workspaces, exists := pkg["workspaces"]
+	if !exists {
+		return nil, nil
+	}
+	managed := make(map[string]bool, len(patterns))
+	for _, pattern := range patterns {
+		managed[pattern] = true
+	}
+
+	if entries, ok := workspaces.([]any); ok {
+		kept, removed := filterManagedStrings(entries, managed)
+		pkg["workspaces"] = kept
+		return removed, nil
+	}
+	workspaceConfig, ok := workspaces.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("package.json workspaces must be an array or an object with packages")
+	}
+	entries, ok := workspaceConfig["packages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("package.json workspaces.packages must be an array")
+	}
+	kept, removed := filterManagedStrings(entries, managed)
+	workspaceConfig["packages"] = kept
+	return removed, nil
+}
+
+func filterManagedStrings(entries []any, managed map[string]bool) ([]any, []string) {
+	kept := make([]any, 0, len(entries))
+	var removed []string
+	for _, entry := range entries {
+		value, ok := entry.(string)
+		if ok && managed[value] {
+			removed = append(removed, value)
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return kept, removed
+}
+
 func yesimPluginNodes(plugins []PluginInfo) (*yaml.Node, error) {
 	pluginConfig := map[string]any{}
 	for _, plugin := range plugins {
@@ -348,6 +445,100 @@ func mergePluginMapping(existing, defaults *yaml.Node) {
 			mergePluginMapping(current, value)
 		}
 	}
+}
+
+// RemoveManagedKoishiYml removes launcher-managed YesImBot plugin entries
+// while retaining unrelated user plugins.
+func RemoveManagedKoishiYml(content []byte, plugins []PluginInfo) ([]byte, []string, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return nil, nil, fmt.Errorf("invalid koishi.yml: %v", err)
+	}
+	root := yamlMappingRoot(&document)
+	if root == nil {
+		return nil, nil, fmt.Errorf("koishi.yml must contain a mapping")
+	}
+	pluginsNode, _ := yamlMapValue(root, "plugins")
+	if pluginsNode == nil {
+		return content, nil, nil
+	}
+	if pluginsNode.Kind != yaml.MappingNode {
+		return nil, nil, fmt.Errorf("koishi.yml plugins must be a mapping")
+	}
+
+	var removed []string
+	removed = append(removed, removeMappingEntries(pluginsNode, func(key string) bool {
+		return pluginBaseKey(key) == "yesimbot"
+	})...)
+
+	for _, groupName := range []string{"group:provider", "group:yesimbot"} {
+		group, _ := yamlMapValue(pluginsNode, groupName)
+		if group == nil || group.Kind != yaml.MappingNode {
+			continue
+		}
+		groupKey := "yesimbot"
+		if groupName == "group:provider" {
+			groupKey = "provider"
+		}
+		removed = append(removed, removeMappingEntries(group, func(key string) bool {
+			return isManagedGroupKey(pluginBaseKey(key), groupKey, plugins)
+		})...)
+		if len(group.Content) == 0 || onlyCollapsed(group) {
+			removeMappingKey(pluginsNode, groupName)
+		}
+	}
+
+	data, err := yaml.Marshal(&document)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal koishi.yml: %v", err)
+	}
+	return data, removed, nil
+}
+
+func isManagedGroupKey(base, group string, plugins []PluginInfo) bool {
+	for _, plugin := range plugins {
+		if plugin.Group == group && plugin.ConfigKey == base {
+			return true
+		}
+	}
+	if group == "provider" {
+		return strings.HasPrefix(base, "@yesimbot/provider-")
+	}
+	return base == "yesimbot" || strings.HasPrefix(base, "yesimbot-")
+}
+
+func removeMappingEntries(mapping *yaml.Node, match func(string) bool) []string {
+	var removed []string
+	kept := make([]*yaml.Node, 0, len(mapping.Content))
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key, value := mapping.Content[i], mapping.Content[i+1]
+		if match(key.Value) {
+			removed = append(removed, key.Value)
+			continue
+		}
+		kept = append(kept, key, value)
+	}
+	mapping.Content = kept
+	return removed
+}
+
+func removeMappingKey(mapping *yaml.Node, key string) bool {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func onlyCollapsed(mapping *yaml.Node) bool {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != "$collapsed" {
+			return false
+		}
+	}
+	return true
 }
 
 // GenerateYarnrc builds the App .yarnrc.yml content.

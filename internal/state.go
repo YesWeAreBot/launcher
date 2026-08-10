@@ -12,14 +12,15 @@ import (
 // StartedAt/StoppedAt are pointers so cleared values serialize as null,
 // matching the design's example state file.
 type LauncherState struct {
-	InitializedAt string  `json:"initializedAt"`
-	Pid           int     `json:"pid,omitempty"`
-	Mode          string  `json:"mode,omitempty"`
-	AppDir        string  `json:"appDir"`
-	StartedAt     *string `json:"startedAt"`
-	StoppedAt     *string `json:"stoppedAt"`
-	SourceHead    string  `json:"sourceHead,omitempty"`
-	UpdatedAt     string  `json:"updatedAt"`
+	InitializedAt string       `json:"initializedAt"`
+	Pid           int          `json:"pid,omitempty"`
+	Mode          string       `json:"mode,omitempty"`
+	AppDir        string       `json:"appDir"`
+	StartedAt     *string      `json:"startedAt"`
+	StoppedAt     *string      `json:"stoppedAt"`
+	SourceHead    string       `json:"sourceHead,omitempty"`
+	Plugins       []PluginInfo `json:"plugins,omitempty"`
+	UpdatedAt     string       `json:"updatedAt"`
 }
 
 // ReadState loads launcher state, returning safe defaults when the file
@@ -41,6 +42,7 @@ func ReadState(paths AppPaths) LauncherState {
 	state.StartedAt = loaded.StartedAt
 	state.StoppedAt = loaded.StoppedAt
 	state.SourceHead = loaded.SourceHead
+	state.Plugins = loaded.Plugins
 	state.UpdatedAt = loaded.UpdatedAt
 	return state
 }
@@ -84,11 +86,12 @@ func StopRun(paths AppPaths) error {
 }
 
 // MarkInitialized writes the init-complete state with no run fields.
-func MarkInitialized(paths AppPaths, sourceHead string) error {
+func MarkInitialized(paths AppPaths, sourceHead string, plugins ...PluginInfo) error {
 	state := LauncherState{
 		InitializedAt: time.Now().UTC().Format(time.RFC3339),
 		AppDir:        paths.AppDir,
 		SourceHead:    sourceHead,
+		Plugins:       plugins,
 	}
 	return writeState(paths, state)
 }

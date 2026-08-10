@@ -1,4 +1,4 @@
-// Package cmd defines the yesimbot-cli command tree (init/start/stop/status).
+// Package cmd defines the yesimbot-cli command tree (init/start/stop/status/uninstall).
 package cmd
 
 import (
@@ -25,7 +25,7 @@ func Execute() int {
 		SilenceErrors: true,
 	}
 
-	rootCmd.AddCommand(newInitCmd(), newStartCmd(), newStopCmd(), newStatusCmd())
+	rootCmd.AddCommand(newInitCmd(), newStartCmd(), newStopCmd(), newStatusCmd(), newUninstallCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "\n✗ Error: %v\n", err)
