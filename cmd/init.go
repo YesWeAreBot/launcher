@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"launcher/internal"
@@ -21,12 +25,37 @@ or ./yesimbot-app in the current directory if not specified.`,
 			if len(args) > 0 {
 				directory = args[0]
 			}
-			_, err := internal.Initialize(internal.InitOptions{
+			result, err := internal.Initialize(internal.InitOptions{
 				Directory: directory,
 				Local:     local,
 				Build:     build,
 			}, internal.NewRunner())
-			return err
+			if err != nil {
+				return err
+			}
+
+			// Ask whether to start now.
+			startNow, err := internal.AskUser("\nStart YesImBot now? [Y/n] ")
+			if err != nil {
+				return err
+			}
+			if startNow {
+				if err := os.Chdir(result.AppDir); err != nil {
+					return fmt.Errorf("cannot enter app directory: %v", err)
+				}
+				_, startErr := internal.Start(internal.StartOptions{AppDir: result.AppDir, Daemon: false})
+				if startErr != nil {
+					var exitErr *internal.ExitError
+					if errors.As(startErr, &exitErr) {
+						fmt.Fprintf(os.Stderr, "Koishi exited with code %d\n", exitErr.Code)
+						os.Exit(exitErr.Code)
+					}
+					return startErr
+				}
+			} else {
+				fmt.Printf("\nTo start later, run:\n  cd %s && yesimbot-cli start\n", result.AppDir)
+			}
+			return nil
 		},
 	}
 

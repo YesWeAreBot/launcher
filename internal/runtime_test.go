@@ -160,7 +160,7 @@ func TestParseYesNo(t *testing.T) {
 }
 
 func TestKoishiCommandUsesNodeCLIEntry(t *testing.T) {
-	entry := filepath.Join(t.TempDir(), "node_modules", "@koishijs", "cli", "bin", "koishi.mjs")
+	entry := filepath.Join(t.TempDir(), "node_modules", "koishi", "bin.js")
 	cmd := newKoishiCommand(entry)
 	want := []string{"node", entry, "start"}
 	if len(cmd.Args) != len(want) {

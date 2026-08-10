@@ -1,23 +1,23 @@
 # YesImBot Launcher
 
-独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot init`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
+独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
 
 ## 构建
 
 ```bash
-make build          # 产物 ./yesimbot（静态、去符号，约 4MB）
+make build          # 产物 ./dist/yesimbot-cli（静态、去符号，约 4MB）
 make dist           # 额外用 UPX 压缩（约 1.6MB，需安装 upx-ucl）
 # 或
-go build -o yesimbot .
+go build -o yesimbot-cli .
 ```
 
 ## 使用
 
 ```text
-yesimbot init [directory] [--local <path>] [--build]
-yesimbot start [--daemon] [--app <directory>]
-yesimbot stop [--app <directory>]
-yesimbot status [--app <directory>]
+yesimbot-cli init [directory] [--local <path>] [--build]
+yesimbot-cli start [--daemon] [--app <directory>]
+yesimbot-cli stop [--app <directory>]
+yesimbot-cli status [--app <directory>]
 ```
 
 ## 目录

@@ -97,26 +97,27 @@ func TestGenerateKoishiYml(t *testing.T) {
 
 	for _, want := range []string{
 		"group:server:", // infrastructure groups with safe defaults
-		"server:launcher:",
+		"server:",
 		"host: 127.0.0.1",
 		"port: 5140",
+		"maxPort: 5199",
 		"group:console:",
 		"group:storage:",
-		"database-sqlite:launcher:",
+		"database-sqlite:",
 		"path: data/koishi.db",
 		"yesimbot: {}", // core enabled at top level
 		"group:provider:",
-		"~@yesimbot/provider-openai:instance:", // disabled with ~ prefix
+		"~@yesimbot/provider-openai:", // disabled with ~ prefix
 		"$label: openai",
 		"group:yesimbot:",
-		"~yesimbot-workspace:instance:",
+		"~yesimbot-workspace:",
 		"$label: workspace",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("koishi.yml missing %q\n---\n%s", want, content)
 		}
 	}
-	for _, banned := range []string{"maxPort", "assets-local", "~yesimbot:"} {
+	for _, banned := range []string{"assets-local", "~yesimbot:"} {
 		if strings.Contains(content, banned) {
 			t.Errorf("koishi.yml contains %q\n---\n%s", banned, content)
 		}

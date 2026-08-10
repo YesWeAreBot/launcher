@@ -391,7 +391,7 @@ func installSourceDeps(ctx *initContext) error {
 			return nil
 		}
 		if !installed && !ctx.options.Build {
-			proceed, err := askUser("  Source node_modules not found. Install dependencies now? [Y/n] ")
+			proceed, err := AskUser("  Source node_modules not found. Install dependencies now? [Y/n] ")
 			if err != nil {
 				return err
 			}
@@ -430,7 +430,7 @@ func buildSource(ctx *initContext) error {
 			return nil
 		}
 		if !built && !ctx.options.Build {
-			proceed, err := askUser("  Source not built (core/dist missing). Build now? [Y/n] ")
+			proceed, err := AskUser("  Source not built (core/dist missing). Build now? [Y/n] ")
 			if err != nil {
 				return err
 			}
@@ -494,8 +494,8 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// askUser prompts yes/no; non-interactive stdin defaults to yes.
-func askUser(question string) (bool, error) {
+// AskUser prompts yes/no; non-interactive stdin defaults to yes.
+func AskUser(question string) (bool, error) {
 	if !isTerminal() {
 		return true, nil
 	}

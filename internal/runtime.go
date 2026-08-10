@@ -56,7 +56,7 @@ func Start(opts StartOptions) (StartResult, error) {
 	state := ReadState(paths)
 
 	if state.Pid > 0 && IsProcessAlive(state.Pid, paths.AppDir) {
-		return StartResult{}, fmt.Errorf("YesImBot is already running (PID %d, mode: %s)\n  Use \"yesimbot stop\" to stop it first.",
+		return StartResult{}, fmt.Errorf("YesImBot is already running (PID %d, mode: %s)\n  Use \"yesimbot-cli stop\" to stop it first.",
 			state.Pid, state.Mode)
 	}
 
@@ -67,7 +67,7 @@ func Start(opts StartOptions) (StartResult, error) {
 
 	entry := resolveKoishiBin(paths.AppDir)
 	if _, err := os.Stat(entry); err != nil {
-		return StartResult{}, fmt.Errorf("Koishi CLI entry not found: %s\n  Run \"yesimbot init\" first, or check that dependencies are installed.",
+		return StartResult{}, fmt.Errorf("Koishi CLI entry not found: %s\n  Run \"yesimbot-cli init\" first, or check that dependencies are installed.",
 			entry)
 	}
 	if err := os.MkdirAll(paths.LogsDir, 0o755); err != nil {
@@ -253,7 +253,7 @@ func Status(appDir string) (RuntimeStatus, error) {
 // resolveKoishiBin locates the installed Koishi CLI entry. Running it through
 // Node avoids platform-specific node_modules/.bin wrappers.
 func resolveKoishiBin(appDir string) string {
-	return filepath.Join(appDir, "node_modules", "@koishijs", "cli", "bin", "koishi.mjs")
+	return filepath.Join(appDir, "node_modules", "koishi", "bin.js")
 }
 
 func newKoishiCommand(koishiBin string) *exec.Cmd {

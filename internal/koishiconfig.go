@@ -144,8 +144,8 @@ func classifyPlugin(packageName string) PluginInfo {
 // GenerateKoishiYml builds the App koishi.yml: infrastructure groups with
 // safe defaults, the YesImBot core plugin enabled at the top level, and
 // providers/YesImBot plugins listed but disabled via the ~ prefix.
-// Follows the design doc's default blocks exactly (server:launcher,
-// database-sqlite:launcher, no maxPort, no assets-local).
+// Follows the design doc's default blocks exactly (server, database-sqlite,
+// maxPort: 5199, no assets-local).
 func GenerateKoishiYml(plugins []PluginInfo, serverPort int) (string, error) {
 	if serverPort == 0 {
 		serverPort = 5140
@@ -153,9 +153,10 @@ func GenerateKoishiYml(plugins []PluginInfo, serverPort int) (string, error) {
 
 	pluginsSection := map[string]any{
 		"group:server": map[string]any{
-			"server:launcher": map[string]any{
-				"host": "127.0.0.1",
-				"port": serverPort,
+			"server": map[string]any{
+				"host":    "127.0.0.1",
+				"port":    serverPort,
+				"maxPort": 5199,
 			},
 		},
 		"group:console": map[string]any{
@@ -166,7 +167,7 @@ func GenerateKoishiYml(plugins []PluginInfo, serverPort int) (string, error) {
 			"status":   map[string]any{},
 		},
 		"group:storage": map[string]any{
-			"database-sqlite:launcher": map[string]any{
+			"database-sqlite": map[string]any{
 				"path": "data/koishi.db",
 			},
 		},
@@ -188,7 +189,7 @@ func GenerateKoishiYml(plugins []PluginInfo, serverPort int) (string, error) {
 			if p.Group != group {
 				continue
 			}
-			key := p.ConfigKey + ":instance"
+			key := p.ConfigKey
 			if !p.Enabled {
 				key = "~" + key
 			}
