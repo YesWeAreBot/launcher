@@ -28,6 +28,23 @@ sh install.sh --channel nightly --install-dir "$HOME/.local/bin"
 
 Linux、WSL 和 macOS 默认安装到 `~/.local/bin`；Windows 默认安装到 `%LOCALAPPDATA%\YesImBot\bin`。如果安装目录已经在 PATH 中，脚本不会重复写入；新增配置在重新打开终端后生效。安装完成后脚本会直接输出 `yesimbot-cli --help`。
 
+### GitHub 镜像加速
+
+可选设置 `GITHUB_MIRROR` 为 GitHub 根地址；脚本和 CLI 会用它下载 Release 二进制、Koishi boilerplate ZIP，以及 YesImBot 源码。未设置时使用官方 GitHub，末尾 `/` 会自动处理：
+
+```bash
+GITHUB_MIRROR=https://mirror.example.com sh install.sh --channel nightly
+GITHUB_MIRROR=https://mirror.example.com yesimbot-cli init ./my-app
+```
+
+```powershell
+$env:GITHUB_MIRROR = 'https://mirror.example.com'
+.\install.ps1 -Channel nightly
+yesimbot-cli init .\my-app
+```
+
+`init` 会优先探测镜像 Git 地址，不可达时回退官方；boilerplate ZIP 和安装脚本二进制下载失败时会直接报错。
+
 ## 构建
 
 ```bash

@@ -47,6 +47,22 @@ case "$CHANNEL" in
         ;;
 esac
 
+if [ -n "${GITHUB_MIRROR:-}" ]; then
+    MIRROR=$GITHUB_MIRROR
+else
+    MIRROR=https://github.com
+fi
+while :; do
+    case "$MIRROR" in
+        */) MIRROR=${MIRROR%/} ;;
+        *) break ;;
+    esac
+done
+case "$MIRROR" in
+    http://*|https://*) ;;
+    *) fail "invalid GITHUB_MIRROR: $MIRROR (expected an http(s) URL)" ;;
+esac
+
 OS=$(uname -s 2>/dev/null) || fail 'cannot detect operating system'
 MACHINE=$(uname -m 2>/dev/null) || fail 'cannot detect CPU architecture'
 case "$OS:$MACHINE" in
@@ -76,7 +92,7 @@ mkdir -p "$INSTALL_DIR" || fail "cannot create install directory: $INSTALL_DIR"
 INSTALL_DIR=$(CDPATH= cd -- "$INSTALL_DIR" && pwd -P) || fail "cannot resolve install directory: $INSTALL_DIR"
 TARGET="$INSTALL_DIR/yesimbot-cli"
 ASSET="yesimbot-cli-$PLATFORM-$ARCH"
-URL="https://github.com/$REPO/releases/download/$CHANNEL/$ASSET"
+URL="$MIRROR/$REPO/releases/download/$CHANNEL/$ASSET"
 
 if command -v curl >/dev/null 2>&1; then
     DOWNLOADER=curl
@@ -92,7 +108,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-printf 'Downloading %s (%s/%s) from %s\n' "$CHANNEL" "$PLATFORM" "$ARCH" "$REPO"
+printf 'Downloading %s (%s/%s) from %s\n' "$CHANNEL" "$PLATFORM" "$ARCH" "$MIRROR"
 case "$DOWNLOADER" in
     curl)
         curl --fail --location --silent --show-error --retry 3 --connect-timeout 15 --max-time 60 --output "$TMP_FILE" "$URL" || fail 'download failed'

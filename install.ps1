@@ -28,15 +28,23 @@ $arch = switch ($architectureName.ToUpperInvariant()) {
     default { throw "Unsupported CPU architecture: $architectureName" }
 }
 
+$mirror = if ([string]::IsNullOrWhiteSpace($env:GITHUB_MIRROR)) {
+    'https://github.com'
+} else {
+    $env:GITHUB_MIRROR.TrimEnd('/')
+}
+if ($mirror -notmatch '^https?://[^/].*') {
+    throw "Invalid GITHUB_MIRROR: $mirror (expected an http(s) URL)"
+}
 $asset = "yesimbot-cli-windows-$arch.exe"
-$url = "https://github.com/YesWeAreBot/launcher/releases/download/$Channel/$asset"
+$url = "$mirror/YesWeAreBot/launcher/releases/download/$Channel/$asset"
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 $InstallDir = (Resolve-Path -LiteralPath $InstallDir).Path
 $target = Join-Path $InstallDir 'yesimbot-cli.exe'
 $tempPath = Join-Path $InstallDir ".yesimbot-cli.$([guid]::NewGuid()).tmp"
 
 try {
-    Write-Host "Downloading $Channel (windows/$arch) from YesWeAreBot/launcher"
+    Write-Host "Downloading $Channel (windows/$arch) from $mirror"
     Invoke-WebRequest -Uri $url -OutFile $tempPath -UseBasicParsing
     Move-Item -LiteralPath $tempPath -Destination $target -Force
 

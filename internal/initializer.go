@@ -209,8 +209,8 @@ func probeYarnRegistry() string {
 // GitHub address. No global git config is ever written.
 func probeGitURL() string {
 	candidates := []string{"https://github.com/YesWeAreBot/YesImBot.git"}
-	if mirror := os.Getenv("GITHUB_MIRROR"); mirror != "" {
-		candidates = append([]string{strings.TrimSuffix(mirror, "/") + "/YesWeAreBot/YesImBot.git"}, candidates...)
+	if githubMirrorRoot() != "" {
+		candidates = append([]string{githubURL("YesWeAreBot/YesImBot.git")}, candidates...)
 	}
 	return probeFastest(candidates, candidates[len(candidates)-1])
 }

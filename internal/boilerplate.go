@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-const boilerplateZipURL = "https://codeload.github.com/koishijs/boilerplate/zip/refs/heads/master"
+const boilerplatePath = "koishijs/boilerplate/zip/refs/heads/master"
 
 func downloadBoilerplate(destination string) error {
 	client := &http.Client{Timeout: time.Minute}
-	response, err := client.Get(boilerplateZipURL)
+	response, err := client.Get(githubArchiveURL(boilerplatePath))
 	if err != nil {
 		return fmt.Errorf("failed to download Koishi boilerplate: %v", err)
 	}
