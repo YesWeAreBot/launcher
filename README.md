@@ -2,6 +2,32 @@
 
 独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
 
+## 一键安装
+
+从 GitHub Release 下载当前平台的预构建包，并安装到用户目录：
+
+```bash
+# Linux / WSL / macOS
+curl -fsSL https://raw.githubusercontent.com/YesWeAreBot/launcher/main/install.sh | sh
+```
+
+```powershell
+# Windows PowerShell
+irm https://raw.githubusercontent.com/YesWeAreBot/launcher/main/install.ps1 | iex
+```
+
+默认从 `nightly` Release 安装。需要指定频道或安装目录时，可下载脚本后执行：
+
+```bash
+sh install.sh --channel nightly --install-dir "$HOME/.local/bin"
+```
+
+```powershell
+.\install.ps1 -Channel nightly -InstallDir "$env:LOCALAPPDATA\YesImBot\bin"
+```
+
+Linux、WSL 和 macOS 默认安装到 `~/.local/bin`；Windows 默认安装到 `%LOCALAPPDATA%\YesImBot\bin`。如果安装目录已经在 PATH 中，脚本不会重复写入；新增配置在重新打开终端后生效。安装完成后脚本会直接输出 `yesimbot-cli --help`。
+
 ## 构建
 
 ```bash
