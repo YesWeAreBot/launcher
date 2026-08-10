@@ -9,11 +9,13 @@
 ```bash
 # Linux / WSL / macOS
 curl -fsSL https://raw.githubusercontent.com/YesWeAreBot/launcher/main/install.sh | sh
+# curl -fsSL https://cdn.jsdelivr.net/gh/YesWeAreBot/launcher@main/install.sh | sh
 ```
 
 ```powershell
 # Windows PowerShell
 irm https://raw.githubusercontent.com/YesWeAreBot/launcher/main/install.ps1 | iex
+# irm https://cdn.jsdelivr.net/gh/YesWeAreBot/launcher@main/install.ps1 | iex
 ```
 
 默认从 `nightly` Release 安装。需要指定频道或安装目录时，可下载脚本后执行：
@@ -33,12 +35,12 @@ Linux、WSL 和 macOS 默认安装到 `~/.local/bin`；Windows 默认安装到 `
 可选设置 `GITHUB_MIRROR` 为 GitHub 根地址；脚本和 CLI 会用它下载 Release 二进制、Koishi boilerplate ZIP，以及 YesImBot 源码。未设置时使用官方 GitHub，末尾 `/` 会自动处理：
 
 ```bash
-GITHUB_MIRROR=https://mirror.example.com sh install.sh --channel nightly
-GITHUB_MIRROR=https://mirror.example.com yesimbot-cli init ./my-app
+GITHUB_MIRROR=https://gh-proxy.com/https://github.com sh install.sh --channel nightly
+GITHUB_MIRROR=https://gh-proxy.com/https://github.com yesimbot-cli init ./my-app
 ```
 
 ```powershell
-$env:GITHUB_MIRROR = 'https://mirror.example.com'
+$env:GITHUB_MIRROR = 'https://gh-proxy.com/https://github.com'
 .\install.ps1 -Channel nightly
 yesimbot-cli init .\my-app
 ```
