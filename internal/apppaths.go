@@ -11,15 +11,16 @@ import (
 
 // AppPaths holds every path the launcher manages inside a Koishi App directory.
 type AppPaths struct {
-	AppDir      string
-	YesimbotDir string
-	SourceDir   string
-	LogsDir     string
-	LogFile     string
-	StateFile   string
-	KoishiYml   string
-	PackageJson string
-	YarnBin     string
+	AppDir             string
+	YesimbotDir        string
+	SourceDir          string
+	LogsDir            string
+	LogFile            string
+	LauncherConfigFile string
+	StateFile          string
+	KoishiYml          string
+	PackageJson        string
+	YarnBin            string
 }
 
 // Derive computes all launcher-managed paths for a Koishi App directory.
@@ -27,15 +28,16 @@ func Derive(appDir string) AppPaths {
 	yesimbotDir := filepath.Join(appDir, ".yesimbot")
 	logsDir := filepath.Join(yesimbotDir, "logs")
 	return AppPaths{
-		AppDir:      appDir,
-		YesimbotDir: yesimbotDir,
-		SourceDir:   filepath.Join(yesimbotDir, "source"),
-		LogsDir:     logsDir,
-		LogFile:     filepath.Join(logsDir, "koishi.log"),
-		StateFile:   filepath.Join(yesimbotDir, "launcher-state.json"),
-		KoishiYml:   filepath.Join(appDir, "koishi.yml"),
-		PackageJson: filepath.Join(appDir, "package.json"),
-		YarnBin:     filepath.Join(appDir, ".yarn", "releases", "yarn-4.12.0.cjs"),
+		AppDir:             appDir,
+		YesimbotDir:        yesimbotDir,
+		SourceDir:          filepath.Join(yesimbotDir, "source"),
+		LogsDir:            logsDir,
+		LogFile:            filepath.Join(logsDir, "koishi.log"),
+		LauncherConfigFile: filepath.Join(yesimbotDir, "launcher.yaml"),
+		StateFile:          filepath.Join(yesimbotDir, "launcher-state.json"),
+		KoishiYml:          filepath.Join(appDir, "koishi.yml"),
+		PackageJson:        filepath.Join(appDir, "package.json"),
+		YarnBin:            filepath.Join(appDir, ".yarn", "releases", "yarn-4.12.0.cjs"),
 	}
 }
 

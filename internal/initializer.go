@@ -108,7 +108,7 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 
 	// 6. Read the YesImBot workspace package manifest.
 	logStep(6, "Discovering plugins...")
-	plugins, err := DiscoverPlugins(paths.SourceDir)
+	plugins, err := DiscoverPluginsWithConfig(paths.SourceDir, paths.LauncherConfigFile)
 	if err != nil {
 		return InitResult{}, err
 	}
@@ -274,7 +274,7 @@ func createAppStructure(ctx *initContext) error {
 			return fmt.Errorf("failed to create directory %s: %v", dir, err)
 		}
 	}
-	return nil
+	return EnsureLauncherConfig(paths.LauncherConfigFile)
 }
 
 // setupSource links --local into .yesimbot/source without touching the

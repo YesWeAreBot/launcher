@@ -68,6 +68,20 @@ yesimbot-cli uninstall [directory] [--app <directory>] [--keep-app] [--yes]
 
 `uninstall` 默认停止实例并把整个 Koishi App 移动到同级备份目录，保证可逆；需要保留 Koishi App 时使用 `--keep-app`。
 
+## Launcher 配置
+
+`yesimbot-cli init` 会在 Koishi App 内生成 `.yesimbot/launcher.yaml`，用于控制已发现的 YesImBot 插件默认启用状态：
+
+```yaml
+plugins:
+  koishi-plugin-yesimbot-console:
+    enabled: true
+  koishi-plugin-yesimbot-usage:
+    enabled: true
+```
+
+修改该文件后重新运行 `yesimbot-cli init`，配置会合并进 App 的 `koishi.yml`；未列出的插件保持 Launcher 默认值。
+
 ## 目录
 
 ```text

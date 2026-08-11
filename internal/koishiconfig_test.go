@@ -21,6 +21,7 @@ func writeFixture(t *testing.T) string {
 		"providers/provider-anthropic": "@yesimbot/koishi-plugin-provider-anthropic",
 		"plugins/yesimbot-workspace":   "koishi-plugin-yesimbot-workspace",
 		"plugins/yesimbot-mcp-client":  "koishi-plugin-yesimbot-mcp-client",
+		"plugins/yesimbot-console":     "koishi-plugin-yesimbot-console",
 		"packages/not-a-plugin":        "some-lib",
 	}
 	for dir, name := range pkgs {
