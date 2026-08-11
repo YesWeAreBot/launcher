@@ -1,6 +1,6 @@
 # YesImBot Launcher
 
-独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
+独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`）、更新 YesImBot source（`yesimbot-cli update`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
 
 ## 一键安装
 
@@ -63,10 +63,12 @@ yesimbot-cli init [directory] [--local <path>] [--build]
 yesimbot-cli start [--daemon] [--app <directory>]
 yesimbot-cli stop [--app <directory>]
 yesimbot-cli status [--app <directory>]
+yesimbot-cli update [--app <directory>]
 yesimbot-cli uninstall [directory] [--app <directory>] [--keep-app] [--yes]
 ```
 
 `uninstall` 默认停止实例并把整个 Koishi App 移动到同级备份目录，保证可逆；需要保留 Koishi App 时使用 `--keep-app`。
+`init` 复用已存在的 source；需要从 `origin/dev` 拉取最新代码时使用 `yesimbot-cli update`。
 
 ## Launcher 配置
 
@@ -86,7 +88,7 @@ plugins:
 
 ```text
 main.go      # 入口
-cmd/         # 命令定义（init/start/stop/status）
+cmd/         # 命令定义（init/update/start/stop/status）
 internal/    # 内部依赖：路径、命令执行、配置生成、init 编排、运行时
 ```
 

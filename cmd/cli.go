@@ -25,7 +25,7 @@ func Execute() int {
 		SilenceErrors: true,
 	}
 
-	rootCmd.AddCommand(newInitCmd(), newStartCmd(), newStopCmd(), newStatusCmd(), newUninstallCmd(), newSelfUpdateCmd())
+	rootCmd.AddCommand(newInitCmd(), newStartCmd(), newStopCmd(), newStatusCmd(), newUninstallCmd(), newSelfUpdateCmd(), newUpdateCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "\n✗ Error: %v\n", err)

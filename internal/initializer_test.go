@@ -4,6 +4,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -129,5 +131,76 @@ func TestSetupSourceReusesExistingDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Errorf("existing source directory was replaced: %v", err)
+	}
+}
+
+type recordedCommand struct {
+	command string
+	args    []string
+	options RunOptions
+}
+
+type recordingRunner struct {
+	calls []recordedCommand
+}
+
+func (r *recordingRunner) Run(command string, args []string, options RunOptions) (RunResult, error) {
+	r.calls = append(r.calls, recordedCommand{command: command, args: append([]string(nil), args...), options: options})
+	return RunResult{}, nil
+}
+
+func TestUpdateSourcePullsDevBranch(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	if err := os.MkdirAll(filepath.Join(paths.SourceDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+
+	if err := UpdateSource(appDir, runner); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("got %d commands, want 1", len(runner.calls))
+	}
+	got := runner.calls[0]
+	if got.command != "git" || !reflect.DeepEqual(got.args, []string{"pull", "--rebase", "origin", "dev"}) {
+		t.Fatalf("got %s %v", got.command, got.args)
+	}
+	if got.options.Cwd != paths.SourceDir || got.options.Stdio != "inherit" {
+		t.Fatalf("got options %#v", got.options)
+	}
+}
+
+func TestUpdateSourceRejectsNonGitSource(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	if err := os.MkdirAll(paths.SourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+
+	err := UpdateSource(appDir, runner)
+	if err == nil || !strings.Contains(err.Error(), "existing source is not a git repository") {
+		t.Fatalf("got error %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("ran %d commands", len(runner.calls))
+	}
+}
+
+func TestSetupSourceDoesNotPullExistingRemoteSource(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	if err := os.MkdirAll(filepath.Join(paths.SourceDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+
+	if err := setupSource(&initContext{paths: paths, runner: runner}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("init unexpectedly ran %v", runner.calls)
 	}
 }
