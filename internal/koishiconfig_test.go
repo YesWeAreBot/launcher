@@ -151,6 +151,63 @@ func TestMergeExistingAppPackageJSONKeepsUserValues(t *testing.T) {
 	}
 }
 
+func TestMergeExistingAppPackageJSONAddsExternalAdapters(t *testing.T) {
+	appDir := filepath.Join(t.TempDir(), "bot")
+	sourceDir := filepath.Join(appDir, ".yesimbot", "source")
+	plugins := []PluginInfo{
+		{PackageName: "koishi-plugin-adapter-onebot", ConfigKey: "adapter-onebot", Group: "adapter", Version: "6.9.4"},
+		{PackageName: "koishi-plugin-adapter-napcat", ConfigKey: "adapter-napcat", Group: "adapter", Version: "6.8.0-napcat.0"},
+	}
+
+	merged, conflicts, err := MergeExistingAppPackageJSON([]byte(`{
+  "name": "app",
+  "dependencies": {}
+}`), appDir, sourceDir, plugins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("conflicts = %v", conflicts)
+	}
+	var pkg map[string]any
+	if err := json.Unmarshal(merged, &pkg); err != nil {
+		t.Fatal(err)
+	}
+	deps := pkg["dependencies"].(map[string]any)
+	if deps["koishi-plugin-adapter-onebot"] != "6.9.4" || deps["koishi-plugin-adapter-napcat"] != "6.8.0-napcat.0" {
+		t.Errorf("external adapter dependencies missing: %v", deps)
+	}
+}
+
+func TestMergeExistingKoishiYmlAddsExternalAdapters(t *testing.T) {
+	plugins := []PluginInfo{
+		{PackageName: "koishi-plugin-adapter-onebot", ConfigKey: "adapter-onebot", Group: "adapter", Version: "6.9.4"},
+		{PackageName: "koishi-plugin-adapter-napcat", ConfigKey: "adapter-napcat", Group: "adapter", Version: "6.8.0-napcat.0"},
+	}
+
+	merged, err := MergeExistingKoishiYml([]byte(`plugins:
+  group:adapter:
+    custom: {}
+`), plugins)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := yaml.Unmarshal(merged, &config); err != nil {
+		t.Fatal(err)
+	}
+	adapterGroup := config["plugins"].(map[string]any)["group:adapter"].(map[string]any)
+	if _, ok := adapterGroup["custom"]; !ok {
+		t.Errorf("existing adapter changed: %v", adapterGroup)
+	}
+	if _, ok := adapterGroup["~adapter-onebot"]; !ok {
+		t.Errorf("missing adapter-onebot: %v", adapterGroup)
+	}
+	if _, ok := adapterGroup["~adapter-napcat"]; !ok {
+		t.Errorf("missing adapter-napcat: %v", adapterGroup)
+	}
+}
+
 func TestMergeExistingKoishiYmlKeepsPluginConfiguration(t *testing.T) {
 	plugins := []PluginInfo{
 		{PackageName: "koishi-plugin-yesimbot", ConfigKey: "yesimbot", Group: "core", Enabled: true},

@@ -18,7 +18,7 @@ func stopProcess(pid int, _ string) (string, bool, error) {
 		if !IsProcessAlive(pid, "") {
 			return "taskkill", true, nil
 		}
-		fmt.Printf("  Graceful stop failed (%v), forcing stop\n", err)
+		fmt.Printf("  Graceful stop failed, forcing stop\n")
 	} else if WaitForExit(pid, gracefulTimeout) {
 		return "taskkill", true, nil
 	}

@@ -295,8 +295,11 @@ func setupSource(ctx *initContext) error {
 				return fmt.Errorf("failed to prepare source directory: %v", err)
 			}
 		} else if info.IsDir() {
-			fmt.Printf("  Using existing source directory: %s\n", paths.SourceDir)
-			return nil
+			if ctx.options.Local != "" {
+				fmt.Printf("  Using local source directory: %s\n", paths.SourceDir)
+				return nil
+			}
+			return updateRemoteSource(ctx)
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("failed to inspect source directory: %v", err)
@@ -316,6 +319,20 @@ func setupSource(ctx *initContext) error {
 	}, RunOptions{Cwd: paths.AppDir}); err != nil {
 		return err
 	}
+	return nil
+}
+
+func updateRemoteSource(ctx *initContext) error {
+	if _, err := os.Stat(filepath.Join(ctx.paths.SourceDir, ".git")); err != nil {
+		return fmt.Errorf("existing source is not a git repository: %s", ctx.paths.SourceDir)
+	}
+	if _, err := Checked(ctx.runner, "git", []string{"pull", "--rebase", "origin", "dev"}, RunOptions{
+		Cwd:   ctx.paths.SourceDir,
+		Stdio: "inherit",
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("  Updated source: %s\n", ctx.paths.SourceDir)
 	return nil
 }
 

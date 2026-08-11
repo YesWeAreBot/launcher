@@ -123,7 +123,8 @@ func TestSetupSourceReusesExistingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := setupSource(&initContext{paths: paths}); err != nil {
+	localDir := t.TempDir()
+	if err := setupSource(&initContext{paths: paths, options: InitOptions{Local: localDir}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(keep); err != nil {
