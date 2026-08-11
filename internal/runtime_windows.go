@@ -14,12 +14,15 @@ func watchForeground(_ *exec.Cmd) func() bool {
 }
 
 func stopProcess(pid int, _ string) (string, bool, error) {
-	if err := taskkill(pid, false); err != nil && IsProcessAlive(pid, "") {
-		return "", false, fmt.Errorf("failed to terminate PID %d: %v", pid, err)
-	}
-	if WaitForExit(pid, gracefulTimeout) {
+	if err := taskkill(pid, false); err != nil {
+		if !IsProcessAlive(pid, "") {
+			return "taskkill", true, nil
+		}
+		fmt.Printf("  Graceful stop failed (%v), forcing stop\n", err)
+	} else if WaitForExit(pid, gracefulTimeout) {
 		return "taskkill", true, nil
 	}
+
 	if err := taskkill(pid, true); err != nil && IsProcessAlive(pid, "") {
 		return "", false, fmt.Errorf("failed to force terminate PID %d: %v", pid, err)
 	}

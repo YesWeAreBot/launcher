@@ -7,14 +7,36 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
-// IsProcessAlive checks tasklist for the recorded PID. Windows has no /proc
-// equivalent, so the launcher state remains the association with Koishi.
+const (
+	processQueryLimitedInformation = 0x1000
+	stillActive                    = 259
+)
+
+// IsProcessAlive checks the process handle directly instead of parsing
+// tasklist output, which can fail with access-denied errors even when the
+// recorded PID still exists.
 func IsProcessAlive(pid int, _ string) bool {
-	output, err := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/FO", "CSV", "/NH").Output()
-	return err == nil && strings.Contains(string(output), fmt.Sprintf(",\"%d\",", pid))
+	if pid <= 0 {
+		return false
+	}
+	handle, err := syscall.OpenProcess(processQueryLimitedInformation, false, uint32(pid))
+	if err != nil {
+		if err == syscall.ERROR_ACCESS_DENIED {
+			return true
+		}
+		return false
+	}
+	defer syscall.CloseHandle(handle)
+
+	var exitCode uint32
+	if err := syscall.GetExitCodeProcess(handle, &exitCode); err != nil {
+		return false
+	}
+	return exitCode == stillActive
 }
 
 func WaitForExit(pid int, timeout time.Duration) bool {
@@ -33,5 +55,13 @@ func taskkill(pid int, force bool) error {
 	if force {
 		args = append(args, "/F")
 	}
-	return exec.Command("taskkill", args...).Run()
+	output, err := exec.Command("taskkill", args...).CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("taskkill %s failed: %w: %s", strings.Join(args, " "), err, detail)
+	}
+	return nil
 }
