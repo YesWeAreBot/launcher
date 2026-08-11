@@ -18,6 +18,7 @@ type PluginInfo struct {
 	Label       string `json:"label,omitempty"`
 	Group       string `json:"group"` // "core", "provider" or "yesimbot"
 	Enabled     bool   `json:"enabled"`
+	Version     string `json:"version,omitempty"`
 }
 
 // DiscoverPlugins scans a YesImBot workspace for Koishi plugin packages.
@@ -61,7 +62,7 @@ func DiscoverPlugins(sourceDir string) ([]PluginInfo, error) {
 	}
 
 	sort.Slice(plugins, func(i, j int) bool {
-		groupOrder := map[string]int{"core": 0, "provider": 1, "yesimbot": 2}
+		groupOrder := map[string]int{"core": 0, "provider": 1, "yesimbot": 2, "adapter": 3}
 		gi, gj := groupOrder[plugins[i].Group], groupOrder[plugins[j].Group]
 		if gi != gj {
 			return gi < gj
@@ -179,7 +180,11 @@ func MergeExistingAppPackageJSON(content []byte, appDir, sourceDir string, plugi
 			conflicts = append(conflicts, plugin.PackageName)
 			continue
 		}
-		deps[plugin.PackageName] = "workspace:^"
+		version := plugin.Version
+		if version == "" {
+			version = "workspace:^"
+		}
+		deps[plugin.PackageName] = version
 	}
 
 	data, err := json.MarshalIndent(pkg, "", "  ")
@@ -471,7 +476,7 @@ func RemoveManagedKoishiYml(content []byte, plugins []PluginInfo) ([]byte, []str
 		return pluginBaseKey(key) == "yesimbot"
 	})...)
 
-	for _, groupName := range []string{"group:provider", "group:yesimbot"} {
+	for _, groupName := range []string{"group:provider", "group:yesimbot", "group:adapter"} {
 		group, _ := yamlMapValue(pluginsNode, groupName)
 		if group == nil || group.Kind != yaml.MappingNode {
 			continue
@@ -479,6 +484,8 @@ func RemoveManagedKoishiYml(content []byte, plugins []PluginInfo) ([]byte, []str
 		groupKey := "yesimbot"
 		if groupName == "group:provider" {
 			groupKey = "provider"
+		} else if groupName == "group:adapter" {
+			groupKey = "adapter"
 		}
 		removed = append(removed, removeMappingEntries(group, func(key string) bool {
 			return isManagedGroupKey(pluginBaseKey(key), groupKey, plugins)

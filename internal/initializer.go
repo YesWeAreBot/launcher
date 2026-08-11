@@ -281,9 +281,25 @@ func createAppStructure(ctx *initContext) error {
 // external repo, or clones the chosen remote at origin/dev.
 func setupSource(ctx *initContext) error {
 	paths := ctx.paths
-	// Replace the empty placeholder directory (created in step 4).
-	if err := os.Remove(paths.SourceDir); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to prepare source directory: %v", err)
+	info, err := os.Lstat(paths.SourceDir)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			if ctx.options.Local != "" {
+				target, evalErr := filepath.EvalSymlinks(paths.SourceDir)
+				if evalErr == nil && samePath(target, ctx.options.Local) {
+					fmt.Printf("  Linked: %s → %s\n", paths.SourceDir, ctx.options.Local)
+					return nil
+				}
+			}
+			if err := os.Remove(paths.SourceDir); err != nil {
+				return fmt.Errorf("failed to prepare source directory: %v", err)
+			}
+		} else if info.IsDir() {
+			fmt.Printf("  Using existing source directory: %s\n", paths.SourceDir)
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to inspect source directory: %v", err)
 	}
 
 	if ctx.options.Local != "" {
@@ -301,6 +317,15 @@ func setupSource(ctx *initContext) error {
 		return err
 	}
 	return nil
+}
+
+func samePath(left, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return strings.EqualFold(filepath.Clean(leftAbs), filepath.Clean(rightAbs))
 }
 
 func writeAppPackageJson(ctx *initContext, plugins []PluginInfo) error {

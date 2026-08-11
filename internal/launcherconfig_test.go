@@ -16,7 +16,12 @@ func TestEnsureLauncherConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"koishi-plugin-yesimbot-console", "koishi-plugin-yesimbot-usage"} {
+	for _, want := range []string{
+		"koishi-plugin-yesimbot-console",
+		"koishi-plugin-yesimbot-usage",
+		"koishi-plugin-adapter-onebot",
+		"koishi-plugin-adapter-napcat",
+	} {
 		if !strings.Contains(string(content), want) {
 			t.Errorf("default launcher config missing %q", want)
 		}
@@ -72,5 +77,11 @@ func TestDiscoverPluginsWithConfig(t *testing.T) {
 	}
 	if !byKey["koishi-plugin-yesimbot-console"].Enabled {
 		t.Error("console plugin should be enabled through launcher config")
+	}
+	if plugin := byKey["koishi-plugin-adapter-onebot"]; plugin.Enabled || plugin.Version != "6.9.4" || plugin.Group != "adapter" {
+		t.Errorf("onebot adapter config wrong: %+v", plugin)
+	}
+	if plugin := byKey["koishi-plugin-adapter-napcat"]; plugin.Enabled || plugin.Version != "6.8.0-napcat.0" || plugin.Group != "adapter" {
+		t.Errorf("napcat adapter config wrong: %+v", plugin)
 	}
 }

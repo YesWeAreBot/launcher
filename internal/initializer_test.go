@@ -111,3 +111,22 @@ func TestCreateAppStructureExistingKeepsKoishiFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupSourceReusesExistingDirectory(t *testing.T) {
+	appDir := t.TempDir()
+	paths := Derive(appDir)
+	if err := os.MkdirAll(paths.SourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keep := filepath.Join(paths.SourceDir, "keep.txt")
+	if err := os.WriteFile(keep, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := setupSource(&initContext{paths: paths}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("existing source directory was replaced: %v", err)
+	}
+}

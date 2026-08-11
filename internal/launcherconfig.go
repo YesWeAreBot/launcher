@@ -15,6 +15,18 @@ plugins:
     enabled: true
   koishi-plugin-yesimbot-usage:
     enabled: true
+  adapter-onebot:
+    package: koishi-plugin-adapter-onebot
+    version: 6.9.4
+    group: adapter
+    label: OneBot
+    enabled: false
+  adapter-napcat:
+    package: koishi-plugin-adapter-napcat
+    version: 6.8.0-napcat.0
+    group: adapter
+    label: NapCat
+    enabled: false
 `
 
 type LauncherConfig struct {
@@ -22,7 +34,11 @@ type LauncherConfig struct {
 }
 
 type PluginConfig struct {
-	Enabled *bool `yaml:"enabled"`
+	Enabled     *bool  `yaml:"enabled"`
+	PackageName string `yaml:"package,omitempty"`
+	Version     string `yaml:"version,omitempty"`
+	Group       string `yaml:"group,omitempty"`
+	Label       string `yaml:"label,omitempty"`
 }
 
 func EnsureLauncherConfig(path string) error {
@@ -61,6 +77,9 @@ func ApplyLauncherConfig(plugins []PluginInfo, config LauncherConfig) []PluginIn
 		if entry, ok := config.Plugins[plugin.PackageName]; ok && entry.Enabled != nil {
 			plugin.Enabled = *entry.Enabled
 		}
+		if entry, ok := config.Plugins[plugin.ConfigKey]; ok && entry.Enabled != nil {
+			plugin.Enabled = *entry.Enabled
+		}
 		result[i] = plugin
 	}
 	return result
@@ -75,5 +94,36 @@ func DiscoverPluginsWithConfig(sourceDir, configPath string) ([]PluginInfo, erro
 	if err != nil {
 		return nil, err
 	}
-	return ApplyLauncherConfig(plugins, config), nil
+	result := ApplyLauncherConfig(plugins, config)
+	existing := make(map[string]bool, len(result)*2)
+	for _, plugin := range result {
+		existing[plugin.PackageName] = true
+		existing[plugin.ConfigKey] = true
+	}
+	for key, entry := range config.Plugins {
+		if entry.PackageName == "" || existing[key] || existing[entry.PackageName] {
+			continue
+		}
+		group := entry.Group
+		if group == "" {
+			group = "adapter"
+		}
+		label := entry.Label
+		if label == "" {
+			label = key
+		}
+		enabled := false
+		if entry.Enabled != nil {
+			enabled = *entry.Enabled
+		}
+		result = append(result, PluginInfo{
+			PackageName: entry.PackageName,
+			ConfigKey:   key,
+			Label:       label,
+			Group:       group,
+			Enabled:     enabled,
+			Version:     entry.Version,
+		})
+	}
+	return result, nil
 }
