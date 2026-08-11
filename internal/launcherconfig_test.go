@@ -31,6 +31,34 @@ func TestEnsureLauncherConfig(t *testing.T) {
 	}
 }
 
+func TestEnsureLauncherConfigMergesMissingDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".yesimbot", "launcher.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := []byte(`plugins:
+  koishi-plugin-yesimbot-console:
+    enabled: true
+  koishi-plugin-yesimbot-usage:
+    enabled: true
+`)
+	if err := os.WriteFile(path, old, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureLauncherConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"adapter-onebot", "adapter-napcat", "koishi-plugin-adapter-onebot", "koishi-plugin-adapter-napcat"} {
+		if !strings.Contains(string(content), want) {
+			t.Errorf("merged launcher config missing %q", want)
+		}
+	}
+}
+
 func TestReadLauncherConfigMissing(t *testing.T) {
 	config, err := ReadLauncherConfig(filepath.Join(t.TempDir(), "missing.yaml"))
 	if err != nil {

@@ -42,18 +42,44 @@ type PluginConfig struct {
 }
 
 func EnsureLauncherConfig(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
+	content, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to inspect launcher config: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create launcher config directory: %w", err)
+	if os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return fmt.Errorf("failed to create launcher config directory: %w", err)
+		}
+		return os.WriteFile(path, []byte(defaultLauncherConfigYAML), 0o644)
 	}
-	if err := os.WriteFile(path, []byte(defaultLauncherConfigYAML), 0o644); err != nil {
-		return fmt.Errorf("failed to write launcher config: %w", err)
+
+	var config LauncherConfig
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		return fmt.Errorf("invalid launcher config: %w", err)
 	}
-	return nil
+	if config.Plugins == nil {
+		config.Plugins = map[string]PluginConfig{}
+	}
+	var defaults LauncherConfig
+	if err := yaml.Unmarshal([]byte(defaultLauncherConfigYAML), &defaults); err != nil {
+		return fmt.Errorf("invalid default launcher config: %w", err)
+	}
+	changed := false
+	for key, entry := range defaults.Plugins {
+		if _, exists := config.Plugins[key]; exists {
+			continue
+		}
+		config.Plugins[key] = entry
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal launcher config: %w", err)
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 func ReadLauncherConfig(path string) (LauncherConfig, error) {
