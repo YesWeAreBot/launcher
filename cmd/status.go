@@ -36,13 +36,13 @@ func newStatusCmd() *cobra.Command {
 
 func printStatus(s internal.RuntimeStatus) {
 	fmt.Println("YesImBot Status")
-	fmt.Println("────────────────────────────────────────")
+	fmt.Println("----------------------------------------")
 	fmt.Printf("  Initialized:  %s\n", check(s.Initialized))
 
 	if s.Running {
-		fmt.Printf("  Running:      ✓ (PID: %d, mode: %s)\n", s.Pid, s.Mode)
+		fmt.Printf("  Running:      [OK] (PID: %d, mode: %s)\n", s.Pid, s.Mode)
 	} else {
-		fmt.Println("  Running:      ✗")
+		fmt.Println("  Running:      [NO]")
 	}
 
 	fmt.Printf("  App Dir:      %s\n", s.AppDir)
@@ -71,7 +71,7 @@ func printStatus(s internal.RuntimeStatus) {
 
 func check(b bool) string {
 	if b {
-		return "✓"
+		return "[OK]"
 	}
-	return "✗"
+	return "[NO]"
 }

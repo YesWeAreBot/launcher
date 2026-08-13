@@ -1,6 +1,6 @@
 # YesImBot Launcher
 
-独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`）、更新 YesImBot source（`yesimbot-cli update`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
+独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`）、更新并重建 YesImBot source（`yesimbot-cli update`），管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`），并检查或更新 CLI 自身（`self-update`）。
 
 > 当前 v4 尚未发布到 npm，也没有上架 Koishi 插件市场。不要使用 `yarn add koishi-plugin-yesimbot` 或在插件市场搜索安装；`yesimbot-cli init` 会从 GitHub `dev` 分支获取 YesImBot 源码、构建并写入 Koishi workspace，这是当前官方安装路径。
 
@@ -34,21 +34,40 @@ Linux、WSL 和 macOS 默认安装到 `~/.local/bin`；Windows 默认安装到 `
 
 ### 安装 YesImBot v4
 
-CLI 安装完成后，运行 `yesimbot-cli init` 接入 v4：
+CLI 安装完成后，运行 `yesimbot-cli init` 接入 v4。首次使用需要先准备 Node.js 18+ 和 Git：
+
+```text
+1. 安装 Node.js 18+ 与 Git
+2. 安装 yesimbot-cli
+3. yesimbot-cli init
+4. cd yesimbot-app
+5. yesimbot-cli start --daemon
+6. yesimbot-cli status
+```
 
 ```bash
 yesimbot-cli init          # 默认创建 ./yesimbot-app，结束后按提示选择是否启动
 # 以后需要再次启动时：
+cd yesimbot-app
 yesimbot-cli start --daemon
 ```
 
 ```powershell
 yesimbot-cli init .\my-app # 创建到指定目录，或传入已有 Koishi App，结束后按提示选择是否启动
 # 以后需要再次启动时：
+cd .\my-app
 yesimbot-cli start --daemon
 ```
 
 `init` 会下载 Koishi boilerplate、从 GitHub `dev` 分支克隆 YesImBot 源码，构建插件并写入 workspace 依赖；当前 v4 不通过 npm 或插件市场发布。Koishi boilerplate 自带 SQLite，默认无需单独安装数据库。
+
+如果当前目录不是 Koishi App，`start` / `stop` / `status` / `update` / `uninstall` 会自动尝试同级的 `yesimbot-app`；也可以在任意位置使用 `--app <目录>` 指定 App。
+
+非交互式环境执行 `init` 需要显式传入 `--yes`，避免脚本在未确认时修改已有 Koishi App：
+
+```bash
+yesimbot-cli init ./my-app --yes
+```
 
 ### GitHub 镜像加速
 
@@ -80,15 +99,20 @@ go build -o yesimbot-cli .
 
 ```text
 yesimbot-cli init [directory] [--local <path>] [--build]
+yesimbot-cli init [directory] --yes
 yesimbot-cli start [--daemon] [--app <directory>]
 yesimbot-cli stop [--app <directory>]
 yesimbot-cli status [--app <directory>]
 yesimbot-cli update [--app <directory>]
+yesimbot-cli self-update [--check] [--channel <channel>]
 yesimbot-cli uninstall [directory] [--app <directory>] [--keep-app] [--yes]
+yesimbot-cli restore <backup-directory>
 ```
 
-`uninstall` 默认停止实例并把整个 Koishi App 移动到同级备份目录，保证可逆；需要保留 Koishi App 时使用 `--keep-app`。
-`init` 复用已存在的 source；需要从 `origin/dev` 拉取最新代码时使用 `yesimbot-cli update`。
+`update` 会先从 `origin/dev` 拉取最新源码，然后自动重装依赖、构建插件并刷新 App 配置；`init` 也会复用已存在的 source。
+`uninstall` 默认停止实例并把整个 Koishi App 移动到同级备份目录，保证可逆；需要保留 Koishi App 时使用 `--keep-app`，此时 `package.json` 和 `koishi.yml` 会先备份到 App 内的 `.yesimbot-uninstall-*.bak` 目录。
+`restore` 可以恢复默认卸载产生的整个 App 备份，也可以从 `--keep-app` 的配置备份中恢复 `package.json` 和 `koishi.yml`。
+`self-update --check` 会下载并读取远端二进制版本，显示当前版本与远端版本，避免只提示“资产可用”造成误导。
 
 ## Launcher 配置
 

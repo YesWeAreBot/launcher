@@ -13,6 +13,7 @@ import (
 func newInitCmd() *cobra.Command {
 	var local string
 	var build bool
+	var yes bool
 
 	cmd := &cobra.Command{
 		Use:   "init [directory]",
@@ -26,18 +27,22 @@ Uses ./yesimbot-app in the current directory if no directory is specified.`,
 				directory = args[0]
 			}
 			result, err := internal.Initialize(internal.InitOptions{
-				Directory: directory,
-				Local:     local,
-				Build:     build,
+				Directory:   directory,
+				Local:       local,
+				Build:       build,
+				SkipPrompts: yes,
 			}, internal.NewRunner())
 			if err != nil {
 				return err
 			}
 
-			// Ask whether to start now.
-			startNow, err := internal.AskUser("\nStart YesImBot now? [Y/n] ")
-			if err != nil {
-				return err
+			startNow := false
+			if !yes {
+				// Ask whether to start now.
+				startNow, err = internal.AskUser("\nStart YesImBot now? [Y/n] ")
+				if err != nil {
+					return err
+				}
 			}
 			if startNow {
 				if err := os.Chdir(result.AppDir); err != nil {
@@ -61,5 +66,6 @@ Uses ./yesimbot-app in the current directory if no directory is specified.`,
 
 	cmd.Flags().StringVar(&local, "local", "", "Use a local YesImBot repository")
 	cmd.Flags().BoolVar(&build, "build", false, "Force install and build for local repository")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Skip confirmation prompts; do not start the app")
 	return cmd
 }

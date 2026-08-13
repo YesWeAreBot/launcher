@@ -73,6 +73,9 @@ func Start(opts StartOptions) (StartResult, error) {
 	if err := os.MkdirAll(paths.LogsDir, 0o755); err != nil {
 		return StartResult{}, fmt.Errorf("failed to create log directory: %v", err)
 	}
+	if url := ConsoleURL(paths); url != "" {
+		fmt.Printf("  Console: %s\n", url)
+	}
 	mode := "foreground"
 	if opts.Daemon {
 		mode = "daemon"

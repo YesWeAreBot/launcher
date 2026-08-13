@@ -19,8 +19,9 @@ func newSelfUpdateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result, err := internal.SelfUpdate(internal.SelfUpdateOptions{
-				Channel:   channel,
-				CheckOnly: check,
+				Channel:        channel,
+				CheckOnly:      check,
+				CurrentVersion: version,
 			})
 			if err != nil {
 				return err
@@ -28,8 +29,19 @@ func newSelfUpdateCmd() *cobra.Command {
 			if check {
 				fmt.Printf("  CLI:        %s\n", result.Executable)
 				fmt.Printf("  Channel:    %s\n", channelOrDefault(channel))
+				fmt.Printf("  Current:    %s\n", result.CurrentVersion)
+				if result.LatestVersion != "" {
+					fmt.Printf("  Latest:     %s\n", result.LatestVersion)
+				}
 				fmt.Printf("  Asset:      %s\n", result.AssetURL)
-				fmt.Println("  Status:     available")
+				switch {
+				case result.LatestVersion == "":
+					fmt.Println("  Status:     asset available")
+				case result.LatestVersion == result.CurrentVersion:
+					fmt.Println("  Status:     up to date")
+				default:
+					fmt.Println("  Status:     update available")
+				}
 				return nil
 			}
 			fmt.Printf("  Update downloaded for: %s\n", result.Executable)
@@ -39,7 +51,7 @@ func newSelfUpdateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&check, "check", false, "Only check whether the release asset is available")
+	cmd.Flags().BoolVar(&check, "check", false, "Compare the current version with the release binary")
 	cmd.Flags().StringVar(&channel, "channel", internal.DefaultChannel, "GitHub release channel")
 	return cmd
 }

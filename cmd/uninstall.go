@@ -56,11 +56,15 @@ By default the whole Koishi App is moved to a sibling backup directory. Pass
 
 			if result.BackupDir != "" {
 				fmt.Printf("Uninstalled %s; app moved to %s\n", result.AppDir, result.BackupDir)
-				fmt.Println("To restore, move the backup directory back to its original path.")
+				fmt.Printf("To restore, run: yesimbot-cli restore %s\n", result.BackupDir)
 			} else if result.KeptApp {
 				fmt.Printf("Removed YesImBot from %s; Koishi App kept\n", result.AppDir)
 				if len(result.Removed) > 0 {
 					fmt.Printf("Removed %d managed dependencies/plugin entries\n", len(result.Removed))
+				}
+				if result.ConfigBackupDir != "" {
+					fmt.Printf("Config backup: %s\n", result.ConfigBackupDir)
+					fmt.Printf("To restore, run: yesimbot-cli restore %s\n", result.ConfigBackupDir)
 				}
 			}
 			return nil

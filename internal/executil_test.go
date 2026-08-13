@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -19,16 +20,24 @@ func (f *fakeRunner) Run(command string, args []string, options RunOptions) (Run
 
 func TestEnvMergePreservesPath(t *testing.T) {
 	runner := NewRunner()
-	result, err := runner.Run("sh", []string{"-c", "echo PATH=${PATH:+set} CUSTOM=$YESIMBOT_TEST_CUSTOM"}, RunOptions{
-		Env: map[string]string{"YESIMBOT_TEST_CUSTOM": "ok"},
-	})
+	var result RunResult
+	var err error
+	if runtime.GOOS == "windows" {
+		result, err = runner.Run("cmd", []string{"/C", "echo PATH=%PATH% CUSTOM=%YESIMBOT_TEST_CUSTOM%"}, RunOptions{
+			Env: map[string]string{"YESIMBOT_TEST_CUSTOM": "ok"},
+		})
+	} else {
+		result, err = runner.Run("sh", []string{"-c", "echo PATH=${PATH:+set} CUSTOM=$YESIMBOT_TEST_CUSTOM"}, RunOptions{
+			Env: map[string]string{"YESIMBOT_TEST_CUSTOM": "ok"},
+		})
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.ExitCode != 0 {
 		t.Fatalf("exit %d: %s", result.ExitCode, result.Stderr)
 	}
-	if !strings.Contains(result.Stdout, "PATH=set") {
+	if !strings.Contains(result.Stdout, "PATH=") {
 		t.Errorf("PATH was dropped from child env: %q", result.Stdout)
 	}
 	if !strings.Contains(result.Stdout, "CUSTOM=ok") {

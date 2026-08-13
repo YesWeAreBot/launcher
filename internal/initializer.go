@@ -15,9 +15,10 @@ import (
 const stepCount = 12
 
 type InitOptions struct {
-	Directory string
-	Local     string
-	Build     bool
+	Directory   string
+	Local       string
+	Build       bool
+	SkipPrompts bool
 }
 
 type InitResult struct {
@@ -62,12 +63,14 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 		}
 	} else {
 		fmt.Printf("WARNING: %s is an existing Koishi App. YesImBot will add dependencies and plugins without replacing existing settings.\n", appDir)
-		proceed, err := AskUser("Continue installing YesImBot? [y/N] ")
-		if err != nil {
-			return InitResult{}, err
-		}
-		if !proceed {
-			return InitResult{}, fmt.Errorf("installation cancelled")
+		if !options.SkipPrompts {
+			proceed, err := AskUser("Continue installing YesImBot? [y/N] ")
+			if err != nil {
+				return InitResult{}, err
+			}
+			if !proceed {
+				return InitResult{}, fmt.Errorf("installation cancelled")
+			}
 		}
 	}
 	paths := Derive(appDir)
@@ -167,7 +170,7 @@ func Initialize(options InitOptions, runner CommandRunner) (InitResult, error) {
 		return InitResult{}, err
 	}
 
-	fmt.Printf("\n✓ Initialization complete: %s\n", appDir)
+	fmt.Printf("\n[OK] Initialization complete: %s\n", appDir)
 	return InitResult{AppDir: appDir, SourceHead: sourceHead, Plugins: plugins}, nil
 }
 
@@ -186,7 +189,7 @@ func preflight(runner CommandRunner, options InitOptions) error {
 	result, err := runner.Run("git", []string{"--version"}, RunOptions{})
 	if err != nil || result.ExitCode != 0 {
 		if options.Local != "" {
-			fmt.Println("  ⚠ Git is not available (continuing — only needed for source HEAD detection)")
+			fmt.Println("  [WARN] Git is not available (continuing -- only needed for source HEAD detection)")
 			return nil
 		}
 		return fmt.Errorf("Git is not available\n  Debian/Ubuntu: sudo apt install git\n  macOS:         brew install git\n  Windows:       winget install Git.Git")
@@ -287,7 +290,7 @@ func setupSource(ctx *initContext) error {
 			if ctx.options.Local != "" {
 				target, evalErr := filepath.EvalSymlinks(paths.SourceDir)
 				if evalErr == nil && samePath(target, ctx.options.Local) {
-					fmt.Printf("  Linked: %s → %s\n", paths.SourceDir, ctx.options.Local)
+					fmt.Printf("  Linked: %s -> %s\n", paths.SourceDir, ctx.options.Local)
 					return nil
 				}
 			}
@@ -312,7 +315,7 @@ func setupSource(ctx *initContext) error {
 		if err := os.Symlink(ctx.options.Local, paths.SourceDir); err != nil {
 			return fmt.Errorf("failed to create symlink: %v", err)
 		}
-		fmt.Printf("  Linked: %s → %s\n", paths.SourceDir, ctx.options.Local)
+		fmt.Printf("  Linked: %s -> %s\n", paths.SourceDir, ctx.options.Local)
 		return nil
 	}
 
@@ -509,10 +512,11 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// AskUser prompts yes/no; non-interactive stdin defaults to yes.
+// AskUser prompts yes/no; non-interactive stdin requires an explicit
+// caller flag such as --yes because defaulting to yes is unsafe.
 func AskUser(question string) (bool, error) {
 	if !isTerminal() {
-		return true, nil
+		return false, fmt.Errorf("confirmation required for: %s\n  Run interactively or pass --yes to skip prompts.", strings.TrimSpace(question))
 	}
 	fmt.Print(question)
 	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')

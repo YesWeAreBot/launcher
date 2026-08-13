@@ -154,6 +154,24 @@ func TestParseYesNo(t *testing.T) {
 	}
 }
 
+func TestAskUserNonInteractiveFails(t *testing.T) {
+	original := os.Stdin
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = reader
+	defer func() {
+		os.Stdin = original
+		reader.Close()
+		writer.Close()
+	}()
+
+	if _, err := AskUser("Continue? [y/N] "); err == nil {
+		t.Fatal("non-interactive AskUser should require an explicit caller flag")
+	}
+}
+
 func TestKoishiCommandUsesNodeCLIEntry(t *testing.T) {
 	entry := filepath.Join(t.TempDir(), "node_modules", "koishi", "bin.js")
 	cmd := newKoishiCommand(entry)

@@ -55,12 +55,24 @@ func ResolveInitTarget(directory string) (string, error) {
 }
 
 // ResolveAppDir returns the absolute App directory for start/stop/status:
-// the --app value, or the current working directory.
+// the --app value, the current working directory when it is a Koishi App,
+// or ./yesimbot-app when the current directory is not itself an App.
 func ResolveAppDir(appOption string) (string, error) {
 	if appOption != "" {
 		return filepath.Abs(appOption)
 	}
-	return os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve current directory: %v", err)
+	}
+	if IsKoishiApp(cwd) {
+		return cwd, nil
+	}
+	defaultApp := filepath.Join(cwd, "yesimbot-app")
+	if IsKoishiApp(defaultApp) {
+		return defaultApp, nil
+	}
+	return "", fmt.Errorf("not a Koishi App: %s\n  Expected package.json and koishi.yml to exist, or pass --app.", cwd)
 }
 
 // AssertEmptyOrNew rejects directories that exist and are not empty.

@@ -17,10 +17,11 @@ type UninstallOptions struct {
 
 // UninstallResult reports what uninstall changed.
 type UninstallResult struct {
-	AppDir    string
-	BackupDir string
-	KeptApp   bool
-	Removed   []string
+	AppDir          string
+	BackupDir       string
+	ConfigBackupDir string
+	KeptApp         bool
+	Removed         []string
 }
 
 // Uninstall removes YesImBot from a Koishi App. By default it moves the whole
@@ -63,6 +64,17 @@ func uninstallWholeApp(paths AppPaths) (UninstallResult, error) {
 }
 
 func uninstallFromApp(paths AppPaths, state LauncherState, skipDeps bool, runner CommandRunner) (UninstallResult, error) {
+	configBackupDir := filepath.Join(paths.AppDir, ".yesimbot-uninstall-"+time.Now().UTC().Format("20060102T150405Z")+".bak")
+	if err := os.MkdirAll(configBackupDir, 0o755); err != nil {
+		return UninstallResult{}, fmt.Errorf("failed to create config backup directory: %v", err)
+	}
+	if err := backupFile(paths.PackageJson, filepath.Join(configBackupDir, "package.json")); err != nil {
+		return UninstallResult{}, fmt.Errorf("failed to back up package.json: %v", err)
+	}
+	if err := backupFile(paths.KoishiYml, filepath.Join(configBackupDir, "koishi.yml")); err != nil {
+		return UninstallResult{}, fmt.Errorf("failed to back up koishi.yml: %v", err)
+	}
+
 	plugins := state.Plugins
 	if len(plugins) == 0 && dirExists(paths.SourceDir) {
 		if discovered, err := DiscoverPlugins(paths.SourceDir); err == nil {
@@ -103,7 +115,12 @@ func uninstallFromApp(paths AppPaths, state LauncherState, skipDeps bool, runner
 	if err := removeYesimbotDir(paths); err != nil {
 		return UninstallResult{}, err
 	}
-	return UninstallResult{AppDir: paths.AppDir, KeptApp: true, Removed: removed}, nil
+	return UninstallResult{
+		AppDir:          paths.AppDir,
+		ConfigBackupDir: configBackupDir,
+		KeptApp:         true,
+		Removed:         removed,
+	}, nil
 }
 
 func backupPath(appDir string) (string, error) {

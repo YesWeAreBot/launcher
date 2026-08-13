@@ -5,23 +5,28 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"time"
 )
 
 const DefaultChannel = "nightly"
 
 type SelfUpdateOptions struct {
-	Channel   string
-	CheckOnly bool
+	Channel        string
+	CheckOnly      bool
+	CurrentVersion string
 }
 
 type SelfUpdateResult struct {
-	Executable string
-	AssetURL   string
-	Applied    bool
+	Executable     string
+	AssetURL       string
+	CurrentVersion string
+	LatestVersion  string
+	Applied        bool
 }
 
 var channelPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -43,18 +48,24 @@ func SelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {
 	if err != nil {
 		return SelfUpdateResult{}, err
 	}
-	result := SelfUpdateResult{Executable: executable, AssetURL: asset}
+	result := SelfUpdateResult{
+		Executable:     executable,
+		AssetURL:       asset,
+		CurrentVersion: options.CurrentVersion,
+	}
 
 	client := &http.Client{Timeout: 5 * time.Minute}
 	if options.CheckOnly {
-		response, err := client.Head(asset)
+		temp, err := downloadUpdate(client, asset, filepath.Dir(executable))
 		if err != nil {
 			return result, fmt.Errorf("failed to check update: %w", err)
 		}
-		defer response.Body.Close()
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			return result, fmt.Errorf("update asset unavailable: %s", response.Status)
+		defer os.Remove(temp)
+		latest, err := binaryVersion(temp)
+		if err != nil {
+			return result, fmt.Errorf("failed to check update: %w", err)
 		}
+		result.LatestVersion = latest
 		return result, nil
 	}
 
@@ -68,6 +79,26 @@ func SelfUpdate(options SelfUpdateOptions) (SelfUpdateResult, error) {
 	}
 	result.Applied = true
 	return result, nil
+}
+
+func binaryVersion(path string) (string, error) {
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(path, 0o755); err != nil {
+			return "", fmt.Errorf("cannot make release binary executable: %w", err)
+		}
+	}
+	output, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("cannot query release binary version: %w", err)
+	}
+	version := strings.TrimSpace(string(output))
+	if index := strings.LastIndex(version, " "); index >= 0 {
+		version = strings.TrimSpace(version[index+1:])
+	}
+	if version == "" {
+		return "", fmt.Errorf("release binary returned an empty version")
+	}
+	return version, nil
 }
 
 func updateAssetURL(channel string) (string, error) {
@@ -92,7 +123,11 @@ func downloadUpdate(client *http.Client, url, dir string) (string, error) {
 		return "", fmt.Errorf("failed to download update: %s", response.Status)
 	}
 
-	file, err := os.CreateTemp(dir, ".yesimbot-cli-update-*")
+	pattern := ".yesimbot-cli-update-*"
+	if runtime.GOOS == "windows" {
+		pattern += ".exe"
+	}
+	file, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary update file: %w", err)
 	}

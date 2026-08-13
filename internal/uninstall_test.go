@@ -188,6 +188,15 @@ func TestUninstallKeepApp(t *testing.T) {
 	if !result.KeptApp || result.BackupDir != "" {
 		t.Fatalf("unexpected result: %+v", result)
 	}
+	if result.ConfigBackupDir == "" {
+		t.Fatal("keep-app uninstall did not create a config backup directory")
+	}
+	if _, err := os.Stat(filepath.Join(result.ConfigBackupDir, "package.json")); err != nil {
+		t.Errorf("package.json backup missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(result.ConfigBackupDir, "koishi.yml")); err != nil {
+		t.Errorf("koishi.yml backup missing: %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(appDir, ".yesimbot")); !os.IsNotExist(err) {
 		t.Errorf("launcher directory still exists: %v", err)
 	}
