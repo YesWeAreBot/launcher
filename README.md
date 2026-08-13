@@ -2,6 +2,8 @@
 
 独立于 Koishi 插件系统的 CLI：初始化 Koishi App（`yesimbot-cli init`）、更新 YesImBot source（`yesimbot-cli update`），并管理 Koishi/YesImBot 子进程（`start` / `stop` / `status`）。
 
+> 当前 v4 尚未发布到 npm，也没有上架 Koishi 插件市场。不要使用 `yarn add koishi-plugin-yesimbot` 或在插件市场搜索安装；`yesimbot-cli init` 会从 GitHub `dev` 分支获取 YesImBot 源码、构建并写入 Koishi workspace，这是当前官方安装路径。
+
 ## 一键安装
 
 从 GitHub Release 下载当前平台的预构建包，并安装到用户目录：
@@ -29,6 +31,24 @@ sh install.sh --channel nightly --install-dir "$HOME/.local/bin"
 ```
 
 Linux、WSL 和 macOS 默认安装到 `~/.local/bin`；Windows 默认安装到 `%LOCALAPPDATA%\YesImBot\bin`。如果安装目录已经在 PATH 中，脚本不会重复写入；新增配置在重新打开终端后生效。安装完成后脚本会直接输出 `yesimbot-cli --help`。
+
+### 安装 YesImBot v4
+
+CLI 安装完成后，运行 `yesimbot-cli init` 接入 v4：
+
+```bash
+yesimbot-cli init          # 默认创建 ./yesimbot-app，结束后按提示选择是否启动
+# 以后需要再次启动时：
+yesimbot-cli start --daemon
+```
+
+```powershell
+yesimbot-cli init .\my-app # 创建到指定目录，或传入已有 Koishi App，结束后按提示选择是否启动
+# 以后需要再次启动时：
+yesimbot-cli start --daemon
+```
+
+`init` 会下载 Koishi boilerplate、从 GitHub `dev` 分支克隆 YesImBot 源码，构建插件并写入 workspace 依赖；当前 v4 不通过 npm 或插件市场发布。Koishi boilerplate 自带 SQLite，默认无需单独安装数据库。
 
 ### GitHub 镜像加速
 
